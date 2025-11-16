@@ -1,0 +1,114 @@
+//=============================================================================
+// MA Crossover Indicator [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Plots two configurable moving averages.
+//  - Highlights bullish and bearish crossovers.
+//  - Optional background coloring around crossover bars.
+//  - Provides alert conditions for crossovers.
+//
+// GREAT AS:
+//  - A beginner-friendly template to learn Pine Script.
+//  - A base for your own system (add filters, HTF direction, etc.).
+//
+//=============================================================================
+//@version=5
+indicator("MA Crossover Indicator [Lab]", overlay = true, max_labels_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupMa     = "Moving Averages"
+src         = input.source(close, "Source", group = groupMa)
+maType      = input.string("EMA", "MA Type", options = ["SMA", "EMA", "RMA", "WMA"], group = groupMa)
+
+fastLen     = input.int(9,  "Fast MA Length", minval = 1, group = groupMa)
+slowLen     = input.int(21, "Slow MA Length", minval = 1, group = groupMa)
+
+groupVisual = "Visual"
+fastColor   = input.color(color.new(color.lime, 0),  "Fast MA Color", group = groupVisual)
+slowColor   = input.color(color.new(color.orange, 0),"Slow MA Color", group = groupVisual)
+showBg      = input.bool(true, "Color Background on Crossovers", group = groupVisual)
+
+groupAlerts = "Alerts"
+enableAlerts = input.bool(true, "Enable Alert Conditions", group = groupAlerts)
+
+//-----------------------------------------------------------------------------
+// HELPERS
+//-----------------------------------------------------------------------------
+f_ma(type, _src, length) =>
+    switch type
+        "SMA" => ta.sma(_src, length)
+        "EMA" => ta.ema(_src, length)
+        "RMA" => ta.rma(_src, length)
+        "WMA" => ta.wma(_src, length)
+        => ta.ema(_src, length)
+
+//-----------------------------------------------------------------------------
+// CALCULATION
+//-----------------------------------------------------------------------------
+fastMa = f_ma(maType, src, fastLen)
+slowMa = f_ma(maType, src, slowLen)
+
+// Crossovers
+bullCross = ta.crossover(fastMa, slowMa)
+bearCross = ta.crossunder(fastMa, slowMa)
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+plot(fastMa, "Fast MA", color = fastColor, linewidth = 2)
+plot(slowMa, "Slow MA", color = slowColor, linewidth = 2)
+
+// Mark crossover bars with small shapes
+plotshape(
+     bullCross,
+     title     = "Bullish Crossover",
+     location  = location.belowbar,
+     style     = shape.triangleup,
+     color     = fastColor,
+     size      = size.tiny,
+     text      = "Bull"
+)
+
+plotshape(
+     bearCross,
+     title     = "Bearish Crossover",
+     location  = location.abovebar,
+     style     = shape.triangledown,
+     color     = slowColor,
+     size      = size.tiny,
+     text      = "Bear"
+)
+
+// Optional background coloring
+bgcolor(showBg and bullCross ? color.new(fastColor, 85) : na)
+bgcolor(showBg and bearCross ? color.new(slowColor, 85) : na)
+
+//-----------------------------------------------------------------------------
+// ALERTS
+//-----------------------------------------------------------------------------
+if enableAlerts
+    alertcondition(
+         bullCross,
+         title   = "Bullish MA Crossover",
+         message = "Fast MA has crossed ABOVE slow MA (bullish crossover)."
+     )
+
+    alertcondition(
+         bearCross,
+         title   = "Bearish MA Crossover",
+         message = "Fast MA has crossed BELOW slow MA (bearish crossover)."
+     )
+
+//-----------------------------------------------------------------------------
+// HOW TO EXPERIMENT
+//-----------------------------------------------------------------------------
+//
+// 1. Change MA Type and lengths (e.g. 9/21, 20/50, 50/200).
+// 2. Try different sources: hl2, ohlc4, etc.
+// 3. Combine with:
+//      - HTF trend filters using request.security()
+//      - RSI to avoid taking entries in overbought/oversold conditions.
+//      - Your existing support/resistance or structure indicators.

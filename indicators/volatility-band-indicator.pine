@@ -1,0 +1,96 @@
+//=============================================================================
+// Volatility Band Indicator [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Classic "volatility bands" around a moving average (similar to Bollinger).
+//  - Upper band = basis + stdev * multiplier.
+//  - Lower band = basis - stdev * multiplier.
+//  - Optional band fill and breakout markers.
+//
+// EDUCATIONAL
+//  - Shows standard deviation usage.
+//  - Demonstrates how to highlight volatility expansion / contraction.
+//
+//=============================================================================
+//@version=5
+indicator("Volatility Band Indicator [Lab]", overlay = true)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupBand  = "Band Settings"
+src        = input.source(close, "Source", group = groupBand)
+length     = input.int(20, "Length", minval = 1, group = groupBand)
+mult       = input.float(2.0, "Std Dev Multiplier", minval = 0.1, step = 0.1, group = groupBand)
+
+maType     = input.string("SMA", "Basis MA Type", options = ["SMA", "EMA", "RMA", "WMA"], group = groupBand)
+
+groupVisual = "Visual"
+bandColor   = input.color(color.new(color.blue, 0), "Band Color", group = groupVisual)
+showFill    = input.bool(true, "Fill Between Bands", group = groupVisual)
+showBreakouts = input.bool(true, "Mark Band Breakouts", group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// HELPERS
+//-----------------------------------------------------------------------------
+f_ma(type, _src, length) =>
+    switch type
+        "SMA" => ta.sma(_src, length)
+        "EMA" => ta.ema(_src, length)
+        "RMA" => ta.rma(_src, length)
+        "WMA" => ta.wma(_src, length)
+        => ta.sma(_src, length)
+
+//-----------------------------------------------------------------------------
+// CALCULATION
+//-----------------------------------------------------------------------------
+basis = f_ma(maType, src, length)
+dev   = ta.stdev(src, length)
+
+upper = basis + dev * mult
+lower = basis - dev * mult
+
+// Breakout detection
+closeAbove = close > upper
+closeBelow = close < lower
+
+//-----------------------------------------------------------------------------// PLOTTING
+//-----------------------------------------------------------------------------
+pBasis = plot(basis, "Basis", color = color.new(bandColor, 0), linewidth = 1)
+pUpper = plot(upper, "Upper Band", color = color.new(bandColor, 0), linewidth = 1)
+pLower = plot(lower, "Lower Band", color = color.new(bandColor, 0), linewidth = 1)
+
+if showFill
+    fill(pUpper, pLower, title = "Band Fill", color = color.new(bandColor, 90))
+
+// Breakout shapes
+if showBreakouts
+    plotshape(
+         closeAbove,
+         title     = "Close Above Upper Band",
+         location  = location.abovebar,
+         style     = shape.triangledown,
+         color     = color.new(color.red, 0),
+         size      = size.tiny,
+         text      = "↑Vol"
+     )
+    plotshape(
+         closeBelow,
+         title     = "Close Below Lower Band",
+         location  = location.belowbar,
+         style     = shape.triangleup,
+         color     = color.new(color.lime, 0),
+         size      = size.tiny,
+         text      = "↓Vol"
+     )
+
+//-----------------------------------------------------------------------------
+// NOTES
+//-----------------------------------------------------------------------------
+//
+// - Bands tighten during low volatility and expand during high volatility.
+// - A common use-case is:
+//      • Look for squeezes (bands very tight) then watch for expansion.
+//      • Combine with direction from MTF Trend Dashboard.
+// - You can experiment with different multipliers (1.5, 2, 3) and lengths.

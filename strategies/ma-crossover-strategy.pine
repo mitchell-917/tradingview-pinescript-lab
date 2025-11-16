@@ -1,0 +1,150 @@
+//=============================================================================
+// MA Crossover Strategy [Lab]
+//=============================================================================
+//
+// IDEA
+//  - Classic trend-following system based on a fast/slow moving average crossover.
+//  - When the fast MA crosses ABOVE the slow MA, we enter long.
+//  - When the fast MA crosses BELOW the slow MA, we enter short.
+//  - Optionally filter trades using a higher timeframe trend MA.
+//
+// GOAL
+//  - Educational strategy that shows how to turn an indicator
+//    (MA crossover) into a backtestable TradingView strategy.
+//
+//=============================================================================
+//@version=5
+strategy("MA Crossover Strategy [Lab]", overlay = true, initial_capital = 10000, 
+     commission_type = strategy.commission.percent, commission_value = 0.01, 
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = true)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupMa     = "Moving Averages"
+src         = input.source(close, "Source", group = groupMa)
+maType      = input.string("EMA", "MA Type", options = ["SMA", "EMA", "RMA", "WMA"], group = groupMa)
+
+fastLen     = input.int(9,  "Fast MA Length", minval = 1, group = groupMa)
+slowLen     = input.int(21, "Slow MA Length", minval = 1, group = groupMa)
+
+groupFilter = "Higher Timeframe Filter"
+useHtfFilter = input.bool(true, "Use Higher Timeframe Trend Filter", group = groupFilter)
+htfTf        = input.timeframe("240", "Higher Timeframe", group = groupFilter)
+htfLen       = input.int(50, "HTF MA Length", minval = 1, group = groupFilter)
+
+groupRisk   = "Risk Management (Simple)"
+riskPct     = input.float(1.0, "Risk % of Equity per Trade (Position Size)", minval = 0.1, maxval = 10, step = 0.1, group = groupRisk)
+slAtrMult   = input.float(2.0, "Stop Loss ATR Multiplier", minval = 0.1, step = 0.1, group = groupRisk)
+tpRR        = input.float(2.0, "Take Profit R:R (TP = SL * RR)", minval = 0.5, step = 0.5, group = groupRisk)
+
+//-----------------------------------------------------------------------------
+// HELPERS
+//-----------------------------------------------------------------------------
+f_ma(type, _src, length) =>
+    switch type
+        "SMA" => ta.sma(_src, length)
+        "EMA" => ta.ema(_src, length)
+        "RMA" => ta.rma(_src, length)
+        "WMA" => ta.wma(_src, length)
+        => ta.ema(_src, length)
+
+//-----------------------------------------------------------------------------
+// CORE CALCULATION
+//-----------------------------------------------------------------------------
+fastMa = f_ma(maType, src, fastLen)
+slowMa = f_ma(maType, src, slowLen)
+
+bullCross = ta.crossover(fastMa, slowMa)
+bearCross = ta.crossunder(fastMa, slowMa)
+
+// Higher timeframe trend filter (optional)
+htfClose  = request.security(syminfo.tickerid, htfTf, close)
+htfMa     = request.security(syminfo.tickerid, htfTf, f_ma(maType, close, htfLen))
+htfBull   = htfClose > htfMa
+htfBear   = htfClose < htfMa
+
+filterLong  = not useHtfFilter or htfBull
+filterShort = not useHtfFilter or htfBear
+
+//-----------------------------------------------------------------------------
+// RISK: POSITION SIZING & STOPS
+//-----------------------------------------------------------------------------
+atrLen = 14
+atr    = ta.atr(atrLen)
+
+// Distance to stop in price units
+longSlDist  = atr * slAtrMult
+shortSlDist = atr * slAtrMult
+
+// Basic position sizing: riskPct% of equity per trade with SL at ATR multiple.
+// position size = (equity * riskPct%) / SL distance.
+equity      = strategy.equity
+capitalRisk = equity * (riskPct / 100.0)
+
+longQty  = longSlDist  > 0 ? capitalRisk / longSlDist  : 0.0
+shortQty = shortSlDist > 0 ? capitalRisk / shortSlDist : 0.0
+
+//-----------------------------------------------------------------------------
+// ENTRY & EXIT LOGIC
+//-----------------------------------------------------------------------------
+//
+// We use strategy.entry() with explicit stop-loss and take-profit prices
+// via strategy.exit() linked by order id.
+//
+// Long example:
+//  - Enter when bullCross and filterLong.
+//  - SL below entry by ATR * mult.
+//  - TP above entry by SL distance * RR.
+//
+// Note: This is a simple example and does not handle partial exits, etc.
+//-----------------------------------------------------------------------------
+longCondition  = bullCross and filterLong
+shortCondition = bearCross and filterShort
+
+// Compute stop & target prices for new signals
+longSlPrice  = close - longSlDist
+longTpPrice  = close + longSlDist * tpRR
+
+shortSlPrice = close + shortSlDist
+shortTpPrice = close - shortSlDist * tpRR
+
+// Manage LONG side
+if longCondition
+    // Close opposite position if open
+    if strategy.position_size < 0
+        strategy.close("Short")
+    // Submit long entry with dynamic quantity
+    strategy.entry(id = "Long", direction = strategy.long, qty = longQty)
+    // Link exits to the "Long" position
+    strategy.exit(id = "Long Exit", from_entry = "Long", stop = longSlPrice, limit = longTpPrice)
+
+// Manage SHORT side
+if shortCondition
+    // Close opposite position if open
+    if strategy.position_size > 0
+        strategy.close("Long")
+    // Submit short entry with dynamic quantity
+    strategy.entry(id = "Short", direction = strategy.short, qty = shortQty)
+    // Link exits to the "Short" position
+    strategy.exit(id = "Short Exit", from_entry = "Short", stop = shortSlPrice, limit = shortTpPrice)
+
+//-----------------------------------------------------------------------------
+// VISUALS (OPTIONAL)
+//-----------------------------------------------------------------------------
+plot(fastMa, "Fast MA", color = color.new(color.lime, 0), linewidth = 2)
+plot(slowMa, "Slow MA", color = color.new(color.orange, 0), linewidth = 2)
+
+plotshape(bullCross, title = "Bullish Cross", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, text = "Long")
+plotshape(bearCross, title = "Bearish Cross", style = shape.triangledown, location = location.abovebar, color = color.red, size = size.tiny, text = "Short")
+
+//-----------------------------------------------------------------------------
+// EDUCATIONAL NOTES
+//-----------------------------------------------------------------------------
+//
+// - This is a "textbook" MA crossover system, not a complete professional system.
+// - Experiment with:
+//      • Fast/slow lengths (e.g. 9/21, 20/50, 50/200).
+//      • Turning the HTF filter on/off.
+//      • Different ATR multipliers and RR values.
+// - Compare results on different symbols and timeframes.

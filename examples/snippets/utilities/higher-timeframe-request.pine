@@ -1,0 +1,15 @@
+// Higher Timeframe Request Snippet
+// - Demonstrates common patterns with request.security().
+//
+//@version=5
+indicator("Higher Timeframe Request Snippet [Lab]", overlay = true)
+
+htf = input.string("60", "Higher Timeframe", tooltip = "e.g. 60, 240, D")
+
+src = input.source(close, "Source")
+
+htfClose = request.security(syminfo.tickerid, htf, src, lookahead = barmerge.lookahead_off)
+htfMa    = ta.sma(htfClose, 20)
+
+// Plot HTF MA on current chart
+plot(htfMa, "HTF 20 MA", color = color.new(color.blue, 0))

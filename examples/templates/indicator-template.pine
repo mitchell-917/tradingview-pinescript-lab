@@ -1,0 +1,19 @@
+// Indicator Template [Lab]
+// - Copy this file to start a new indicator.
+// - Fill in the TODO sections with your logic.
+
+//@version=5
+indicator("My Indicator Name [Lab]", overlay = true, timeframe = "", timeframe_gaps = true)
+
+// === Inputs ===
+// TODO: Add your inputs here.
+len = input.int(20, "Length", minval = 1)
+src = input.source(close, "Source")
+
+// === Calculations ===
+// TODO: Replace this with your main calculations.
+val = ta.sma(src, len)
+
+// === Plotting ===
+// TODO: Adjust plotting to fit your indicator.
+plot(val, "Value")

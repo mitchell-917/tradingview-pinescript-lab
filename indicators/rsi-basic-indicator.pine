@@ -1,0 +1,100 @@
+//=============================================================================
+// RSI Basic Indicator [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Plots classic RSI.
+//  - Highlights overbought / oversold zones.
+//  - Marks RSI crossovers of those levels.
+//  - Provides alerts for OB/OS crosses.
+//
+// EDUCATIONAL ANGLE
+//  - Very common oscillator, great for explaining:
+//      • How to use separate indicator panes.
+//      • Overbought / oversold logic.
+//      • Simple alert conditions.
+//
+//=============================================================================
+//@version=5
+indicator("RSI Basic Indicator [Lab]", overlay = false)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+length      = input.int(14, "RSI Length", minval = 1)
+src         = input.source(close, "Source")
+obLevel     = input.float(70.0, "Overbought Level", minval = 0, maxval = 100)
+osLevel     = input.float(30.0, "Oversold Level",  minval = 0, maxval = 100)
+
+showZones   = input.bool(true, "Show OB/OS Background Zones")
+enableAlerts = input.bool(true, "Enable Alert Conditions")
+
+//-----------------------------------------------------------------------------
+// CALCULATION
+//-----------------------------------------------------------------------------
+rsi = ta.rsi(src, length)
+
+// Conditions
+crossIntoOB = ta.crossover(rsi, obLevel)
+crossOutOfOB = ta.crossunder(rsi, obLevel)
+
+crossIntoOS = ta.crossunder(rsi, osLevel)
+crossOutOfOS = ta.crossover(rsi, osLevel)
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+plot(rsi, "RSI", color = color.new(color.aqua, 0), linewidth = 2)
+
+// Overbought / Oversold levels
+hline(obLevel, "Overbought", color = color.new(color.red, 40))
+hline(osLevel, "Oversold",   color = color.new(color.lime, 40))
+hline(50,      "Midline",    color = color.new(color.gray, 60), linestyle = hline.style_dotted)
+
+// Optional background shading
+bgcolor(showZones and rsi > obLevel ? color.new(color.red, 90)  : na)
+bgcolor(showZones and rsi < osLevel ? color.new(color.lime, 90) : na)
+
+// Mark crossovers with small shapes
+plotshape(
+     crossIntoOB,
+     title     = "Cross Into Overbought",
+     location  = location.absolute,
+     style     = shape.triangledown,
+     color     = color.new(color.red, 0),
+     size      = size.tiny,
+     text      = "OB"
+)
+
+plotshape(
+     crossIntoOS,
+     title     = "Cross Into Oversold",
+     location  = location.absolute,
+     style     = shape.triangleup,
+     color     = color.new(color.lime, 0),
+     size      = size.tiny,
+     text      = "OS"
+)
+
+//-----------------------------------------------------------------------------
+// ALERTS
+//-----------------------------------------------------------------------------
+if enableAlerts
+    alertcondition(
+         crossIntoOB,
+         title   = "RSI Cross Into Overbought",
+         message = "RSI crossed ABOVE the overbought level."
+     )
+    alertcondition(
+         crossIntoOS,
+         title   = "RSI Cross Into Oversold",
+         message = "RSI crossed BELOW the oversold level."
+     )
+
+//-----------------------------------------------------------------------------
+// STUDY IDEAS
+//-----------------------------------------------------------------------------
+//
+// - Compare RSI signals across different lengths (7, 14, 21).
+// - Use RSI divergences manually in combination with your structure tool.
+// - Use OB/OS signals only in the direction of HTF trend (filter false signals).

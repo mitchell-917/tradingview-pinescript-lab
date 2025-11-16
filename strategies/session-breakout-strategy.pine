@@ -1,0 +1,124 @@
+//=============================================================================
+// Session Breakout Strategy [Lab]
+//=============================================================================
+//
+// IDEA
+//  - Mark an intraday session (e.g. London or New York) and trade breakouts
+//    of that session's high/low AFTER the session ends.
+//  - Long when price breaks above session high.
+//  - Short when price breaks below session low.
+//
+// GOAL
+//  - Show how to build a session-based strategy using the same concepts
+//    as the Session High/Low indicator, but with entries & exits.
+//
+//=============================================================================
+//@version=5
+strategy("Session Breakout Strategy [Lab]", overlay = true, initial_capital = 10000,
+     commission_type = strategy.commission.percent, commission_value = 0.01,
+     pyramiding = 1, calc_on_every_tick = false, process_orders_on_close = true)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupSess   = "Session Settings"
+sessionTimes = input.session("0800-1200", "Session Times (Exchange Time)", group = groupSess,
+     tooltip = "Define the session whose range you want to trade breakouts of.")
+tradeAfterSession = input.bool(true, "Only Trade After Session Ends", group = groupSess,
+     tooltip = "When ON, we wait until session is over before taking breakouts.")
+
+groupRisk = "Risk Management"
+riskPct   = input.float(1.0, "Risk % of Equity per Trade", minval = 0.1, maxval = 10, step = 0.1, group = groupRisk)
+slBufferMult = input.float(0.5, "SL Buffer (in ATR multiples)", minval = 0.0, step = 0.1, group = groupRisk)
+tpRR      = input.float(2.0, "Take Profit R:R", minval = 0.5, step = 0.5, group = groupRisk)
+
+//-----------------------------------------------------------------------------
+// SESSION LOGIC
+//-----------------------------------------------------------------------------
+inSession   = not na(time(timeframe.period, sessionTimes))
+isNewSession = inSession and not inSession[1]
+isSessionEnd = not inSession and inSession[1]
+
+var float sessHigh = na
+var float sessLow  = na
+
+// Track high/low of current session
+if isNewSession
+    sessHigh := high
+    sessLow  := low
+else if inSession
+    sessHigh := na(sessHigh) ? high : math.max(sessHigh, high)
+    sessLow  := na(sessLow)  ? low  : math.min(sessLow,  low)
+
+//-----------------------------------------------------------------------------
+// BREAKOUT CONDITIONS
+//-----------------------------------------------------------------------------
+//
+// If tradeAfterSession is true:
+//  - Only take trades once session has ended (i.e., while not inSession and after isSessionEnd).
+// If false:
+//  - Allow trades as soon as high/low is formed.
+//
+// We compare current close to the recorded session high/low.
+//
+canTradeNow = tradeAfterSession ? (not inSession and not na(sessHigh) and not na(sessLow)) : (not na(sessHigh) and not na(sessLow))
+
+longBreakout  = canTradeNow and close > sessHigh
+shortBreakout = canTradeNow and close < sessLow
+
+//-----------------------------------------------------------------------------
+// RISK & POSITION SIZE
+//-----------------------------------------------------------------------------
+atrLen = 14
+atr    = ta.atr(atrLen)
+
+equity      = strategy.equity
+capitalRisk = equity * (riskPct / 100.0)
+
+// Long SL below session low with small buffer
+longSlPrice  = sessLow - atr * slBufferMult
+longSlDist   = close - longSlPrice
+
+// Short SL above session high with buffer
+shortSlPrice = sessHigh + atr * slBufferMult
+shortSlDist  = shortSlPrice - close
+
+longQty  = longSlDist  > 0 ? capitalRisk / longSlDist  : 0.0
+shortQty = shortSlDist > 0 ? capitalRisk / shortSlDist : 0.0
+
+longTpPrice  = close + longSlDist * tpRR
+shortTpPrice = close - shortSlDist * tpRR
+
+//-----------------------------------------------------------------------------
+// ENTRY & EXIT
+//-----------------------------------------------------------------------------
+if longBreakout
+    if strategy.position_size < 0
+        strategy.close("Short")
+    strategy.entry("Long", strategy.long, qty = longQty)
+    strategy.exit("Long Exit", from_entry = "Long", stop = longSlPrice, limit = longTpPrice)
+
+if shortBreakout
+    if strategy.position_size > 0
+        strategy.close("Long")
+    strategy.entry("Short", strategy.short, qty = shortQty)
+    strategy.exit("Short Exit", from_entry = "Short", stop = shortSlPrice, limit = shortTpPrice)
+
+//-----------------------------------------------------------------------------
+// VISUALS
+//-----------------------------------------------------------------------------
+plot(sessHigh, "Session High", color = color.new(color.lime, 0), style = plot.style_linebr, linewidth = 2)
+plot(sessLow,  "Session Low",  color = color.new(color.red, 0),  style = plot.style_linebr, linewidth = 2)
+
+plotshape(longBreakout,  title = "Long Breakout",  style = shape.triangleup,   location = location.belowbar, color = color.lime, size = size.tiny, text = "L BO")
+plotshape(shortBreakout, title = "Short Breakout", style = shape.triangledown, location = location.abovebar, color = color.red,  size = size.tiny, text = "S BO")
+
+//-----------------------------------------------------------------------------
+// NOTES
+//-----------------------------------------------------------------------------
+//
+// - Experiment with different session windows (London, NY, Asia).
+// - This is a generic breakout model; consider filters:
+//      • Higher timeframe trend direction.
+//      • Minimum session range size.
+//      • Time-of-day filters (e.g. don't open new trades late in the day).

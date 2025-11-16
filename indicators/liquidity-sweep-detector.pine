@@ -1,0 +1,187 @@
+//=============================================================================
+// Liquidity Sweep Detector [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Highlights bars that "sweep" recent highs/lows and then close back inside
+//    the range. This is a common way to visualise "stop hunts" or "liquidity
+//    grabs" around obvious levels.
+//
+// EDUCATIONAL FOCUS
+//  - This is not a complete trading system.
+//  - It’s a teaching tool to help you visually spot liquidity sweeps and
+//    study them in different market conditions and timeframes.
+//
+// HOW IT DEFINES A SWEEP
+//  - Bullish sweep (downward liquidity grab):
+//      • Current low takes out a previous low (within a lookback window).
+//      • Candle closes back ABOVE that previous low.
+//  - Bearish sweep (upward liquidity grab):
+//      • Current high takes out a previous high.
+//      • Candle closes back BELOW that previous high.
+//  - Optional filters:
+//      • Minimum wick size (so we ignore tiny pokes).
+//      • Require the bar to be a swing high/low.
+//
+// Try it on FX, indices, and major crypto pairs on 5m / 15m / 1H.
+//
+//=============================================================================
+//@version=5
+indicator("Liquidity Sweep Detector [Lab]", overlay = true, max_labels_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupDetection = "Detection"
+lookbackHigh   = input.int(10, "Lookback for High Sweeps", minval = 1, group = groupDetection)
+lookbackLow    = input.int(10, "Lookback for Low Sweeps",  minval = 1, group = groupDetection)
+
+pivotLen       = input.int(2, "Swing Pivot Length", minval = 1, group = groupDetection,
+     tooltip = "If 'Require Swing High/Low' is enabled, we look for pivots with this number of bars on each side.")
+
+requireSwing   = input.bool(false, "Require Swing High/Low", group = groupDetection,
+     tooltip = "When ON, only pivot highs/lows can qualify as sweeps.")
+
+minWickPct     = input.float(0.10, "Min Wick % of Candle Range", minval = 0.0, step = 0.05, group = groupDetection,
+     tooltip = "Require the sweeping wick to be at least this percentage of the total candle range. 0 disables this filter.")
+
+groupVisual    = "Visual & Alerts"
+showMarkers    = input.bool(true, "Show Small Arrow Markers", group = groupVisual)
+showLabels     = input.bool(true, "Show Detailed Text Labels", group = groupVisual)
+showBg         = input.bool(false, "Color Background on Sweeps", group = groupVisual)
+
+bullColor      = input.color(color.new(color.lime, 0),  "Bullish Sweep Color", group = groupVisual)
+bearColor      = input.color(color.new(color.red, 0),   "Bearish Sweep Color", group = groupVisual)
+bgOpacity      = input.int(90, "Background Opacity",    minval = 0, maxval = 100, group = groupVisual)
+
+enableAlerts   = input.bool(true, "Enable Alert Conditions", group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// HELPER FUNCTIONS
+//-----------------------------------------------------------------------------
+
+// Swing high: high is greater than 'pivotLen' bars on each side.
+isSwingHigh(src, len) =>
+    ph = ta.pivothigh(src, len, len)
+    not na(ph) and bar_index == ta.bar_index(ph)
+
+// Swing low: low is lower than 'pivotLen' bars on each side.
+isSwingLow(src, len) =>
+    pl = ta.pivotlow(src, len, len)
+    not na(pl) and bar_index == ta.bar_index(pl)
+
+//-----------------------------------------------------------------------------
+// BASIC CALCULATIONS
+//-----------------------------------------------------------------------------
+
+// Candle ranges and wicks
+candleRange = high - low
+upperWick   = high - math.max(open, close)
+lowerWick   = math.min(open, close) - low
+
+upperWickPct = candleRange > 0 ? upperWick / candleRange : 0.0
+lowerWickPct = candleRange > 0 ? lowerWick / candleRange : 0.0
+
+// Highest/lowest of PRIOR bars (we exclude the current bar by indexing [1])
+prevHigh = ta.highest(high[1], lookbackHigh)
+prevLow  = ta.lowest(low[1],  lookbackLow)
+
+// Raw sweep conditions based purely on price behaviour
+rawUpSweep   = high > prevHigh and close < prevHigh      // sweeps above highs then closes back inside
+rawDownSweep = low < prevLow  and close > prevLow        // sweeps below lows then closes back inside
+
+// Optional swing filter
+passesSwingUp   = not requireSwing or isSwingHigh(high, pivotLen)
+passesSwingDown = not requireSwing or isSwingLow(low, pivotLen)
+
+// Optional wick filter
+passesWickUp   = upperWickPct >= minWickPct
+passesWickDown = lowerWickPct >= minWickPct
+
+// Final conditions
+upSweep   = rawUpSweep   and passesSwingUp   and passesWickUp
+downSweep = rawDownSweep and passesSwingDown and passesWickDown
+
+//-----------------------------------------------------------------------------
+// VISUALS: MARKERS, LABELS, BACKGROUND
+//-----------------------------------------------------------------------------
+
+// Small triangle markers near the bar
+if showMarkers
+    plotshape(
+         upSweep,
+         title     = "Bearish Liquidity Sweep (Upwards)",
+         style     = shape.triangledown,
+         location  = location.abovebar,
+         color     = bearColor,
+         size      = size.tiny,
+         text      = "↑LS"
+     )
+    plotshape(
+         downSweep,
+         title     = "Bullish Liquidity Sweep (Downwards)",
+         style     = shape.triangleup,
+         location  = location.belowbar,
+         color     = bullColor,
+         size      = size.tiny,
+         text      = "↓LS"
+     )
+
+// Optional background highlight
+bgcolor(showBg and upSweep   ? color.new(bearColor, bgOpacity) : na)
+bgcolor(showBg and downSweep ? color.new(bullColor, bgOpacity) : na)
+
+// Informational labels explaining the event in more detail
+if showLabels and upSweep
+    label.new(
+         bar_index,
+         high,
+         "Upward Liquidity Sweep\n" +
+         "• High breaks prior high\n" +
+         "• Close back INSIDE range",
+         style     = label.style_label_down,
+         color     = bearColor,
+         textcolor = color.white,
+         size      = size.small
+     )
+
+if showLabels and downSweep
+    label.new(
+         bar_index,
+         low,
+         "Downward Liquidity Sweep\n" +
+         "• Low breaks prior low\n" +
+         "• Close back INSIDE range",
+         style     = label.style_label_up,
+         color     = bullColor,
+         textcolor = color.white,
+         size      = size.small
+     )
+
+//-----------------------------------------------------------------------------
+// ALERTS
+//-----------------------------------------------------------------------------
+if enableAlerts
+    alertcondition(
+         upSweep,
+         title   = "Upward Liquidity Sweep",
+         message = "Upward liquidity sweep (stop hunt above prior highs) detected."
+     )
+    alertcondition(
+         downSweep,
+         title   = "Downward Liquidity Sweep",
+         message = "Downward liquidity sweep (stop hunt below prior lows) detected."
+     )
+
+//-----------------------------------------------------------------------------
+// EDUCATIONAL NOTES (Comments Only)
+//-----------------------------------------------------------------------------
+//
+// Study ideas:
+//  - Add this on top of your favourite trend indicator or market-structure tool.
+//  - Tag screenshots when sweeps align with key HTF levels.
+//  - Combine with volume spikes or order-flow concepts if you use them.
+//
+// Risk management:
+//  - Never trade purely because a sweep appeared.
+//  - Always combine with a clear invalidation level and position sizing.

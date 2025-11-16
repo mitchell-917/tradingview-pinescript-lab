@@ -1,0 +1,15 @@
+//@version=5
+// Library Template [Lab]
+// - Example of a simple Pine Script library.
+// - Not all TradingView accounts support custom libraries.
+//
+// To use: save as a library in TradingView, then import from another script.
+//
+//#property library
+
+library("MyLabUtils", overlay = false)
+
+// Example function: normalized RSI
+calcNormalizedRsi(src, len) =>
+    r = ta.rsi(src, len)
+    (r - 50.0) / 50.0

@@ -1,0 +1,101 @@
+//=============================================================================
+// MTF Trend Dashboard [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Shows a mini dashboard of trend direction across multiple timeframes.
+//  - Each cell = Bullish / Bearish / Neutral based on close vs MA.
+//
+// HOW IT WORKS
+//  - For each selected timeframe:
+//      • Compute an MA on that timeframe.
+//      • Compare close vs MA.
+//      • Color cell green if close > MA, red if close < MA, gray otherwise.
+//
+//=============================================================================
+//@version=5
+indicator("MTF Trend Dashboard [Lab]", overlay = true, max_labels_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupTf = "Timeframes"
+tf1     = input.timeframe("15",  "TF 1", group = groupTf)
+tf2     = input.timeframe("60",  "TF 2", group = groupTf)
+tf3     = input.timeframe("240", "TF 3", group = groupTf)
+tf4     = input.timeframe("D",   "TF 4", group = groupTf)
+
+groupMa = "MA Settings"
+maLen   = input.int(50, "MA Length", minval = 1, group = groupMa)
+maType  = input.string("EMA", "MA Type", options = ["SMA", "EMA", "RMA", "WMA"], group = groupMa)
+
+groupViz = "Visual"
+bullColor = input.color(color.new(color.lime, 0), "Bullish Color", group = groupViz)
+bearColor = input.color(color.new(color.red, 0),  "Bearish Color", group = groupViz)
+neutralColor = input.color(color.new(color.gray, 0), "Neutral Color", group = groupViz)
+
+textColor = input.color(color.white, "Text Color", group = groupViz)
+
+//-----------------------------------------------------------------------------
+// HELPERS
+//-----------------------------------------------------------------------------
+f_ma(type, _src, length) =>
+    switch type
+        "SMA" => ta.sma(_src, length)
+        "EMA" => ta.ema(_src, length)
+        "RMA" => ta.rma(_src, length)
+        "WMA" => ta.wma(_src, length)
+        => ta.ema(_src, length)
+
+// For one timeframe, compute trend state.
+f_trend(tf) =>
+    c_tf  = request.security(syminfo.tickerid, tf, close)
+    ma_tf = request.security(syminfo.tickerid, tf, f_ma(maType, close, maLen))
+
+    bool bull = c_tf > ma_tf
+    bool bear = c_tf < ma_tf
+
+    string text  = bull ? "Bull" : bear ? "Bear" : "Neutral"
+    color  col   = bull ? bullColor : bear ? bearColor : neutralColor
+
+    [text, col]
+
+//-----------------------------------------------------------------------------
+// TREND STATE FOR EACH TF
+//-----------------------------------------------------------------------------
+[t1Text, t1Color] = f_trend(tf1)
+[t2Text, t2Color] = f_trend(tf2)
+[t3Text, t3Color] = f_trend(tf3)
+[t4Text, t4Color] = f_trend(tf4)
+
+//-----------------------------------------------------------------------------
+// TABLE DASHBOARD
+//-----------------------------------------------------------------------------
+var table dash = table.new(position.top_right, 2, 4, border_color = color.new(color.white, 80))
+
+if barstate.islast
+    // Row 0
+    table.cell(dash, 0, 0, tf1,  text_color = textColor, bgcolor = color.new(color.black, 80))
+    table.cell(dash, 1, 0, t1Text, text_color = textColor, bgcolor = t1Color)
+
+    // Row 1
+    table.cell(dash, 0, 1, tf2,  text_color = textColor, bgcolor = color.new(color.black, 80))
+    table.cell(dash, 1, 1, t2Text, text_color = textColor, bgcolor = t2Color)
+
+    // Row 2
+    table.cell(dash, 0, 2, tf3,  text_color = textColor, bgcolor = color.new(color.black, 80))
+    table.cell(dash, 1, 2, t3Text, text_color = textColor, bgcolor = t3Color)
+
+    // Row 3
+    table.cell(dash, 0, 3, tf4,  text_color = textColor, bgcolor = color.new(color.black, 80))
+    table.cell(dash, 1, 3, t4Text, text_color = textColor, bgcolor = t4Color)
+
+//-----------------------------------------------------------------------------
+// NOTES
+//-----------------------------------------------------------------------------
+//
+// - This dashboard is a simple trend filter.
+// - Combine with your entry tools on a single lower timeframe (e.g. 5m / 15m).
+// - Example rule-of-thumb:
+//      • Only take longs if most TFs show 'Bull'.
+//      • Only take shorts if most TFs show 'Bear'.

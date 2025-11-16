@@ -1,0 +1,34 @@
+// Strategy Template [Lab]
+// - Copy this file to start a new strategy.
+// - Fill in the TODO sections with your entry/exit logic.
+//
+// NOTE: Strategies can only have one strategy() declaration.
+
+//@version=5
+strategy("My Strategy Name [Lab]",
+     overlay = true,
+     initial_capital = 10000,
+     pyramiding = 1,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.01)
+
+// === Inputs ===
+// TODO: Add your inputs here.
+len = input.int(20, "Length", minval = 1)
+src = input.source(close, "Source")
+
+// === Signals ===
+// TODO: Implement your entry/exit conditions.
+ma = ta.sma(src, len)
+longEntry  = ta.crossover(src, ma)
+shortEntry = ta.crossunder(src, ma)
+
+// === Entries ===
+if longEntry
+    strategy.entry("Long", strategy.long)
+
+if shortEntry
+    strategy.entry("Short", strategy.short)
+
+// === Exits ===
+// TODO: Implement proper exits (stops, targets, etc.).

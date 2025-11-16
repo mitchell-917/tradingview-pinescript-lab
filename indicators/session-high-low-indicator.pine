@@ -1,0 +1,89 @@
+//=============================================================================
+// Session High/Low Indicator [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Tracks the High and Low of a chosen intraday session.
+//  - Plots current session high/low as horizontal lines.
+//  - Optionally displays previous session's high/low for reference.
+//
+// USAGE
+//  - Great for London / New York session ranges.
+//  - Helps visualise where price is relative to key intraday extremes.
+//
+//=============================================================================
+//@version=5
+indicator("Session High/Low Indicator [Lab]", overlay = true, max_lines_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupSess   = "Session Settings"
+sessionTimes = input.session("0900-1700", "Session Times (Exchange Time)", group = groupSess)
+showPrev    = input.bool(true,  "Show Previous Session High/Low", group = groupSess)
+extendLines = input.bool(true,  "Extend Lines to the Right",       group = groupSess)
+
+groupVisual = "Visual"
+curHiColor  = input.color(color.new(color.lime,  0), "Current Session High", group = groupVisual)
+curLoColor  = input.color(color.new(color.red,   0), "Current Session Low",  group = groupVisual)
+prevHiColor = input.color(color.new(color.lime, 70), "Previous Session High", group = groupVisual)
+prevLoColor = input.color(color.new(color.red,  70), "Previous Session Low",  group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// SESSION LOGIC
+//-----------------------------------------------------------------------------
+inSession = not na(time(timeframe.period, sessionTimes))
+isNewSession = inSession and not inSession[1]
+isSessionEnd = not inSession and inSession[1]
+
+// Current session high/low
+var float sessHigh = na
+var float sessLow  = na
+
+// Previous session high/low
+var float prevSessHigh = na
+var float prevSessLow  = na
+
+if isNewSession
+    // When a new session starts, move current to previous
+    prevSessHigh := sessHigh
+    prevSessLow  := sessLow
+    sessHigh     := high
+    sessLow      := low
+else if inSession
+    sessHigh := na(sessHigh) ? high : math.max(sessHigh, high)
+    sessLow  := na(sessLow)  ? low  : math.min(sessLow,  low)
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+
+extendMode = extendLines ? extend.right : extend.none
+
+// Current session lines
+plot(sessHigh, "Session High", color = curHiColor, linewidth = 2, style = plot.style_linebr)
+plot(sessLow,  "Session Low",  color = curLoColor, linewidth = 2, style = plot.style_linebr)
+
+// Previous session lines
+plot(showPrev ? prevSessHigh : na, "Prev Session High", color = prevHiColor, linewidth = 1, style = plot.style_linebr)
+plot(showPrev ? prevSessLow  : na, "Prev Session Low",  color = prevLoColor, linewidth = 1, style = plot.style_linebr)
+
+// Optional labels at the start of each session for clarity
+if isNewSession
+    label.new(
+         bar_index,
+         high,
+         "Session Start",
+         style     = label.style_label_down,
+         color     = color.new(color.blue, 40),
+         textcolor = color.white
+     )
+
+//-----------------------------------------------------------------------------
+// STUDY IDEAS
+//-----------------------------------------------------------------------------
+//
+// - Combine this with Liquidity Sweep Detector to see how often sweeps happen
+//   around session highs/lows.
+// - Study breakout vs fakeout behaviour around these levels.
+// - Use previous session high/low as potential targets or invalidation levels.

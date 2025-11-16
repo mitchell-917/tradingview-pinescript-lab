@@ -1,0 +1,23 @@
+// Table Dashboard Snippet
+// - Shows how to build a small on-chart table with metrics.
+//
+//@version=5
+indicator("Table Dashboard Snippet [Lab]", overlay = true)
+
+lenRsi = input.int(14, "RSI Length")
+lenAtr = input.int(14, "ATR Length")
+
+rsiVal = ta.rsi(close, lenRsi)
+atrVal = ta.atr(lenAtr)
+
+var table dash = table.new(position.top_left, 2, 3, border_width = 1)
+
+if barstate.islast
+    table.cell(dash, 0, 0, "Metric", text_color = color.white, bgcolor = color.new(color.black, 0))
+    table.cell(dash, 1, 0, "Value",  text_color = color.white, bgcolor = color.new(color.black, 0))
+
+    table.cell(dash, 0, 1, "RSI")
+    table.cell(dash, 1, 1, str.tostring(rsiVal, format.mintick))
+
+    table.cell(dash, 0, 2, "ATR")
+    table.cell(dash, 1, 2, str.tostring(atrVal, format.mintick))

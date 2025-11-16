@@ -1,0 +1,20 @@
+// Color Themes & Gradients Snippet
+// - Demonstrates dynamic colors based on value.
+//
+//@version=5
+indicator("Color Themes & Gradients Snippet [Lab]", overlay = false)
+
+len = input.int(14, "Length")
+src = input.source(close, "Source")
+
+rsiVal = ta.rsi(src, len)
+
+// Gradient: lower RSI -> greener, higher RSI -> redder.
+gradColor(value) =>
+    // Map 0-100 to 0-255
+    v = math.round(math.clamp(value, 0, 100))
+    // Simple 2-color blend approximation
+    vNorm = v / 100.0
+    color.from_gradient(vNorm, color.new(color.green, 0), color.new(color.red, 0))
+
+plot(rsiVal, "RSI", color = gradColor(rsiVal))

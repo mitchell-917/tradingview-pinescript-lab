@@ -1,0 +1,17 @@
+// Basic Alert Condition Example
+// - Shows how to define alert conditions in an indicator.
+//
+//@version=5
+indicator("Basic Alert Condition Example [Lab]", overlay = true)
+
+src = input.source(close, "Source")
+len = input.int(20, "Moving Average Length", minval = 1)
+
+ma  = ta.sma(src, len)
+crossUp   = ta.crossover(src, ma)
+crossDown = ta.crossunder(src, ma)
+
+plot(ma, "MA", color = color.new(color.orange, 0))
+
+alertcondition(crossUp,   title = "Price Crosses Above MA", message = "Price crossed ABOVE moving average.")
+alertcondition(crossDown, title = "Price Crosses Below MA", message = "Price crossed BELOW moving average.")

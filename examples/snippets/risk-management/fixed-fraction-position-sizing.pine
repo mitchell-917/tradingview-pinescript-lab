@@ -1,0 +1,29 @@
+// Fixed-Fraction Position Sizing Snippet
+// - Demonstrates calculating order quantity based on a fixed % of equity at risk.
+//
+//@version=5
+strategy("Fixed-Fraction Sizing Example [Lab]", overlay = true, initial_capital = 10000)
+
+riskPct = input.float(1.0, "Risk per Trade (% Equity)", minval = 0.1, maxval = 10.0)
+lenAtr  = input.int(14, "ATR Length", minval = 1)
+
+atrVal = ta.atr(lenAtr)
+
+// Example entry condition: close crosses above 50-period SMA.
+ma = ta.sma(close, 50)
+longEntry = ta.crossover(close, ma)
+
+// Position sizing
+capital   = strategy.equity
+riskValue = capital * (riskPct / 100.0)
+stopDist  = atrVal * 2.0
+qty       = stopDist > 0 ? riskValue / stopDist : 0
+
+if longEntry
+    strategy.entry("Long", strategy.long, qty = qty)
+
+if strategy.position_size > 0
+    stopPrice = strategy.position_avg_price - stopDist
+    strategy.exit("Long Exit", "Long", stop = stopPrice)
+
+plot(ma, "MA", color = color.new(color.orange, 0))

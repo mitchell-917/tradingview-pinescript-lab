@@ -1,0 +1,114 @@
+//=============================================================================
+// RSI Mean Reversion Strategy [Lab]
+//=============================================================================
+//
+// IDEA
+//  - Counter-trend / mean-reversion approach using RSI extremes.
+//  - Go LONG when RSI moves out of oversold territory.
+//  - Go SHORT when RSI moves out of overbought territory.
+//  - Optional trend filter so you only fade pullbacks in a dominant direction.
+//
+// GOAL
+//  - Show how to build a simple oscillator-based strategy with exits
+//    based on fixed R:R and/or return to the RSI midline.
+//
+//=============================================================================
+//@version=5
+strategy("RSI Mean Reversion Strategy [Lab]", overlay = true, initial_capital = 10000,
+     commission_type = strategy.commission.percent, commission_value = 0.01,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = true)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupRsi   = "RSI Settings"
+rsiLen     = input.int(14, "RSI Length", minval = 1, group = groupRsi)
+obLevel    = input.float(70.0, "Overbought Level", minval = 50, maxval = 100, group = groupRsi)
+osLevel    = input.float(30.0, "Oversold Level",  minval = 0,  maxval = 50,  group = groupRsi)
+src        = input.source(close, "Source", group = groupRsi)
+
+groupFilter = "Trend Filter"
+useMaFilter = input.bool(true, "Use Trend Filter (MA)", group = groupFilter)
+maLen       = input.int(200, "Filter MA Length", minval = 1, group = groupFilter)
+
+groupRisk   = "Risk Management"
+riskPct     = input.float(1.0, "Risk % of Equity per Trade", minval = 0.1, maxval = 10, step = 0.1, group = groupRisk)
+slAtrMult   = input.float(1.5, "Stop Loss ATR Multiplier", minval = 0.1, step = 0.1, group = groupRisk)
+tpRR        = input.float(1.5, "Take Profit R:R", minval = 0.5, step = 0.5, group = groupRisk)
+useMidlineExit = input.bool(true, "Also Exit When RSI Crosses Midline (50)", group = groupRisk)
+
+//-----------------------------------------------------------------------------
+// CALCULATION
+//-----------------------------------------------------------------------------
+rsi   = ta.rsi(src, rsiLen)
+mid   = 50.0
+
+// Mean reversion signals:
+// - Long: RSI crosses back ABOVE oversold level.
+// - Short: RSI crosses back BELOW overbought level.
+longSignal  = ta.crossover(rsi, osLevel)
+shortSignal = ta.crossunder(rsi, obLevel)
+
+// Trend filter using MA of price to bias trades
+maFilter = ta.sma(close, maLen)
+upTrend  = close > maFilter
+dnTrend  = close < maFilter
+
+longCond  = longSignal  and (not useMaFilter or upTrend)
+shortCond = shortSignal and (not useMaFilter or dnTrend)
+
+// ATR-based SL distance
+atrLen = 14
+atr    = ta.atr(atrLen)
+
+longSlDist  = atr * slAtrMult
+shortSlDist = atr * slAtrMult
+
+equity      = strategy.equity
+capitalRisk = equity * (riskPct / 100.0)
+
+longQty  = longSlDist  > 0 ? capitalRisk / longSlDist  : 0.0
+shortQty = shortSlDist > 0 ? capitalRisk / shortSlDist : 0.0
+
+longSlPrice  = close - longSlDist
+longTpPrice  = close + longSlDist * tpRR
+
+shortSlPrice = close + shortSlDist
+shortTpPrice = close - shortSlDist * tpRR
+
+//-----------------------------------------------------------------------------
+// ENTRY & EXIT
+//-----------------------------------------------------------------------------
+if longCond
+    if strategy.position_size < 0
+        strategy.close("Short")
+    strategy.entry("Long", strategy.long, qty = longQty)
+    strategy.exit("Long Exit", from_entry = "Long", stop = longSlPrice, limit = longTpPrice)
+
+if shortCond
+    if strategy.position_size > 0
+        strategy.close("Long")
+    strategy.entry("Short", strategy.short, qty = shortQty)
+    strategy.exit("Short Exit", from_entry = "Short", stop = shortSlPrice, limit = shortTpPrice)
+
+// Optional additional exit when RSI returns to midline (mean reversion complete?)
+if useMidlineExit and strategy.position_size > 0 and ta.crossunder(rsi, mid)
+    strategy.close("Long", comment = "RSI Midline Exit")
+
+if useMidlineExit and strategy.position_size < 0 and ta.crossover(rsi, mid)
+    strategy.close("Short", comment = "RSI Midline Exit")
+
+//-----------------------------------------------------------------------------
+// VISUALS
+//-----------------------------------------------------------------------------
+plot(maFilter, "Trend MA", color = color.new(color.orange, 0), linewidth = 2)
+plotshape(longSignal,  title = "Long Signal (RSI from OS)",  style = shape.triangleup,   location = location.belowbar, color = color.lime, size = size.tiny, text = "L")
+plotshape(shortSignal, title = "Short Signal (RSI from OB)", style = shape.triangledown, location = location.abovebar, color = color.red,  size = size.tiny, text = "S")
+
+//-----------------------------------------------------------------------------
+// NOTES
+//-----------------------------------------------------------------------------
+//
+// - Mean reversion strategies often work better in range-bound markets.
+// - Use the MA filter to avoid fighting very strong trends.
+// - Test on assets with historically mean-reverting behaviour (FX pairs, indices).

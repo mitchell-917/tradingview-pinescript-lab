@@ -1,0 +1,134 @@
+//=============================================================================
+// Liquidity Sweep Reversal Strategy [Lab]
+//=============================================================================
+//
+// IDEA
+//  - Use the same logic as the Liquidity Sweep Detector indicator, but
+//    trade potential reversals after a sweep of recent highs/lows.
+//  - Bullish setup: price sweeps below prior lows and closes back inside.
+//  - Bearish setup: price sweeps above prior highs and closes back inside.
+//
+// WARNING
+//  - This is an advanced concept (stop hunts / liquidity grabs).
+//  - Script is for education / experimentation, not a plug-and-play system.
+//
+//=============================================================================
+//@version=5
+strategy("Liquidity Sweep Reversal Strategy [Lab]", overlay = true, initial_capital = 10000,
+     commission_type = strategy.commission.percent, commission_value = 0.01,
+     pyramiding = 1, calc_on_every_tick = false, process_orders_on_close = true)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupDetection = "Sweep Detection"
+lookbackHigh   = input.int(10, "Lookback for High Sweeps", minval = 1, group = groupDetection)
+lookbackLow    = input.int(10, "Lookback for Low Sweeps",  minval = 1, group = groupDetection)
+
+pivotLen       = input.int(2, "Swing Pivot Length", minval = 1, group = groupDetection,
+     tooltip = "If 'Require Swing High/Low' is enabled, we look for pivots with this number of bars on each side.")
+
+requireSwing   = input.bool(false, "Require Swing High/Low", group = groupDetection,
+     tooltip = "When ON, only pivot highs/lows can qualify as sweeps.")
+
+minWickPct     = input.float(0.10, "Min Wick % of Candle Range", minval = 0.0, step = 0.05, group = groupDetection,
+     tooltip = "Require the sweeping wick to be at least this percentage of the total candle range. 0 disables this filter.")
+
+groupRisk = "Risk Management"
+riskPct   = input.float(1.0, "Risk % of Equity per Trade", minval = 0.1, maxval = 10, step = 0.1, group = groupRisk)
+slAtrMult = input.float(1.5, "Stop Loss ATR Multiplier",   minval = 0.1, step = 0.1, group = groupRisk)
+tpRR      = input.float(2.0, "Take Profit R:R",            minval = 0.5, step = 0.5, group = groupRisk)
+
+//-----------------------------------------------------------------------------
+// HELPER FUNCTIONS
+//-----------------------------------------------------------------------------
+isSwingHigh(src, len) =>
+    ph = ta.pivothigh(src, len, len)
+    not na(ph) and bar_index == ta.bar_index(ph)
+
+isSwingLow(src, len) =>
+    pl = ta.pivotlow(src, len, len)
+    not na(pl) and bar_index == ta.bar_index(pl)
+
+//-----------------------------------------------------------------------------
+// SWEEP LOGIC (SAME CORE AS INDICATOR)
+//-----------------------------------------------------------------------------
+candleRange = high - low
+upperWick   = high - math.max(open, close)
+lowerWick   = math.min(open, close) - low
+
+upperWickPct = candleRange > 0 ? upperWick / candleRange : 0.0
+lowerWickPct = candleRange > 0 ? lowerWick / candleRange : 0.0
+
+prevHigh = ta.highest(high[1], lookbackHigh)
+prevLow  = ta.lowest(low[1],  lookbackLow)
+
+rawUpSweep   = high > prevHigh and close < prevHigh      // sweeps above highs then closes back inside
+rawDownSweep = low < prevLow  and close > prevLow        // sweeps below lows then closes back inside
+
+passesSwingUp   = not requireSwing or isSwingHigh(high, pivotLen)
+passesSwingDown = not requireSwing or isSwingLow(low, pivotLen)
+
+passesWickUp   = upperWickPct >= minWickPct
+passesWickDown = lowerWickPct >= minWickPct
+
+upSweep   = rawUpSweep   and passesSwingUp   and passesWickUp
+downSweep = rawDownSweep and passesSwingDown and passesWickDown
+
+//-----------------------------------------------------------------------------
+// RISK & POSITION SIZE
+//-----------------------------------------------------------------------------
+atrLen = 14
+atr    = ta.atr(atrLen)
+
+equity      = strategy.equity
+capitalRisk = equity * (riskPct / 100.0)
+
+// For bullish sweep (downSweep), SL goes below the sweep low.
+// For bearish sweep (upSweep), SL goes above the sweep high.
+longSlPrice  = low  - atr * slAtrMult
+shortSlPrice = high + atr * slAtrMult
+
+longSlDist   = close - longSlPrice
+shortSlDist  = shortSlPrice - close
+
+longQty  = longSlDist  > 0 ? capitalRisk / longSlDist  : 0.0
+shortQty = shortSlDist > 0 ? capitalRisk / shortSlDist : 0.0
+
+longTpPrice  = close + longSlDist * tpRR
+shortTpPrice = close - shortSlDist * tpRR
+
+//-----------------------------------------------------------------------------
+// ENTRIES & EXITS
+//-----------------------------------------------------------------------------
+bullishReversal = downSweep   // swept lows then closed back inside
+bearishReversal = upSweep     // swept highs then closed back inside
+
+if bullishReversal
+    if strategy.position_size < 0
+        strategy.close("Short")
+    strategy.entry("Long", strategy.long, qty = longQty)
+    strategy.exit("Long Exit", from_entry = "Long", stop = longSlPrice, limit = longTpPrice)
+
+if bearishReversal
+    if strategy.position_size > 0
+        strategy.close("Long")
+    strategy.entry("Short", strategy.short, qty = shortQty)
+    strategy.exit("Short Exit", from_entry = "Short", stop = shortSlPrice, limit = shortTpPrice)
+
+//-----------------------------------------------------------------------------
+// VISUALS
+//-----------------------------------------------------------------------------
+plotshape(upSweep,   title = "Bearish Liquidity Sweep", style = shape.triangledown, location = location.abovebar, color = color.red,  size = size.tiny, text = "LS↑")
+plotshape(downSweep, title = "Bullish Liquidity Sweep", style = shape.triangleup,   location = location.belowbar, color = color.lime, size = size.tiny, text = "LS↓")
+
+//-----------------------------------------------------------------------------
+// NOTES
+//-----------------------------------------------------------------------------
+//
+// - This is a high-conviction reversal concept; expect many small losers and
+//   fewer large winners if the RR is set large enough.
+// - Consider combining this with:
+//      • Higher timeframe structure (trade sweeps only in line with HTF trend).
+//      • Session levels (only trade sweeps around session highs/lows).
+// - Always treat this as an experimental/learning script.

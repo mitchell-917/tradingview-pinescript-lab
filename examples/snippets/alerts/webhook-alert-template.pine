@@ -1,0 +1,24 @@
+// Webhook Alert Template Example
+// - Demonstrates structured JSON-style alert messages for webhooks.
+//
+//@version=5
+indicator("Webhook Alert Template Example [Lab]", overlay = true)
+
+src = input.source(close, "Source")
+len = input.int(14, "RSI Length", minval = 1)
+
+rsiVal = ta.rsi(src, len)
+ob     = input.int(70, "Overbought Level")
+os     = input.int(30, "Oversold Level")
+
+longSignal  = rsiVal <= os
+shortSignal = rsiVal >= ob
+
+// Example JSON payload (string) – customize as needed.
+longMsg  = '{"signal": "long", "symbol": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + '}'
+shortMsg = '{"signal": "short", "symbol": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + '}'
+
+alertcondition(longSignal,  title = "RSI Long Webhook",  message = longMsg)
+alertcondition(shortSignal, title = "RSI Short Webhook", message = shortMsg)
+
+plot(rsiVal, "RSI", color = color.new(color.aqua, 0))

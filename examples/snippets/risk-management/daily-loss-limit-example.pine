@@ -1,0 +1,35 @@
+// Daily Loss Limit Example
+// - Stops trading for the rest of the day after a max loss is hit.
+//
+//@version=5
+strategy("Daily Loss Limit Example [Lab]", overlay = true, initial_capital = 10000)
+
+maxDailyLossPct = input.float(2.0, "Max Daily Loss (% of Equity)", minval = 0.1, maxval = 50.0)
+
+// Reset reference at start of each day
+newDay = ta.change(time("D")) != 0
+var float dayStartEquity = na
+
+if newDay or na(dayStartEquity)
+    dayStartEquity := strategy.equity
+
+dailyPnl      = strategy.equity - dayStartEquity
+dailyLoss     = -math.min(dailyPnl, 0)
+dailyLossPct  = dayStartEquity > 0 ? (dailyLoss / dayStartEquity) * 100.0 : 0
+
+tradingAllowed = dailyLossPct < maxDailyLossPct
+
+// Example entry: simple MA crossover, but only if tradingAllowed.
+maFast = ta.sma(close, 10)
+maSlow = ta.sma(close, 30)
+crossUp = ta.crossover(maFast, maSlow)
+crossDown = ta.crossunder(maFast, maSlow)
+
+if tradingAllowed and crossUp
+    strategy.entry("Long", strategy.long)
+
+if crossDown
+    strategy.close("Long")
+
+plot(maFast, "Fast MA", color = color.new(color.teal, 0))
+plot(maSlow, "Slow MA", color = color.new(color.orange, 0))

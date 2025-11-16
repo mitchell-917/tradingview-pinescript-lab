@@ -1,0 +1,24 @@
+// Date/Time Filters Snippet
+// - Shows how to limit logic to specific sessions, days, or date ranges.
+//
+//@version=5
+indicator("Date/Time Filters Snippet [Lab]", overlay = true)
+
+sessionStr = input.session("0900-1700", "Session")
+enableSessionFilter = input.bool(true, "Enable Session Filter")
+enableDayFilter     = input.bool(false, "Only Trade Mon-Fri")
+enableDateRange     = input.bool(false, "Enable Date Range Filter")
+fromDate            = input.time(timestamp("2023-01-01T00:00:00Z"), "From Date")
+toDate              = input.time(timestamp("2025-01-01T00:00:00Z"), "To Date")
+
+inSession  = not enableSessionFilter or session.ismarket(sessionStr)
+dayOfWeek  = dayofweek
+isBusinessDay = dayOfWeek >= dayofweek.monday and dayOfWeek <= dayofweek.friday
+inDay      = not enableDayFilter or isBusinessDay
+
+inRange    = not enableDateRange or (time >= fromDate and time <= toDate)
+
+allowedBar = inSession and inDay and inRange
+
+// Example: highlight allowed bars.
+bgcolor(allowedBar ? color.new(color.green, 90) : na)

@@ -1,0 +1,210 @@
+//=============================================================================
+// Market Structure Tool [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Identifies swing highs & swing lows.
+//  - Labels each swing as HH, HL, LH, LL relative to previous swings.
+//  - Shows a simple "trend state" (Bullish / Bearish / Neutral).
+//
+// GOAL
+//  - Educational visualisation for classic price-action market structure.
+//  - Not a full institutional-grade market structure engine.
+//
+// HOW IT WORKS
+//  1. Detect swing highs/lows using ta.pivothigh / ta.pivotlow.
+//  2. Keep track of the last swing highs and lows.
+//  3. New swing high:
+//        * higher than previous swing high => HH
+//        * otherwise => LH
+//     New swing low:
+//        * lower than previous swing low => LL
+//        * otherwise => HL
+//  4. From the most recent swings we infer a basic trend direction.
+//
+//=============================================================================
+//@version=5
+indicator("Market Structure Tool [Lab]", overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupSwings   = "Swing Detection"
+pivotLen      = input.int(2, "Pivot Length (L/R)", minval = 1, group = groupSwings,
+     tooltip = "Number of bars on each side required for a pivot high/low.")
+minSwingDist  = input.int(5, "Min Bars Between Swings", minval = 1, group = groupSwings,
+     tooltip = "Ignore new swings if they appear less than this many bars from the last swing of the same type.")
+
+groupVisual   = "Visual"
+showLines     = input.bool(true, "Connect Swings With Lines", group = groupVisual)
+maxSwings     = input.int(30, "Max Swings to Keep (per type)", minval = 5, maxval = 100, group = groupVisual)
+bullColor     = input.color(color.new(color.lime, 0), "Bullish Color", group = groupVisual)
+bearColor     = input.color(color.new(color.red, 0),  "Bearish Color", group = groupVisual)
+neutralColor  = input.color(color.new(color.gray, 0), "Neutral Color", group = groupVisual)
+
+showTrendLabel = input.bool(true, "Show Trend Label (top-left)", group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// SWING DETECTION
+//-----------------------------------------------------------------------------
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+
+isSwingHigh = not na(ph)
+isSwingLow  = not na(pl)
+
+swingHighPrice = isSwingHigh ? ph : na
+swingLowPrice  = isSwingLow  ? pl : na
+swingHighBar   = isSwingHigh ? bar_index[pivotLen] : na
+swingLowBar    = isSwingLow  ? bar_index[pivotLen] : na
+
+//-----------------------------------------------------------------------------
+// DATA STRUCTURES TO STORE SWINGS
+//-----------------------------------------------------------------------------
+var float[] swingHighPrices = array.new_float()
+var int[]   swingHighBars   = array.new_int()
+var string[] swingHighTypes = array.new_string()
+
+var float[] swingLowPrices  = array.new_float()
+var int[]   swingLowBars    = array.new_int()
+var string[] swingLowTypes  = array.new_string()
+
+// Helper to maintain a max size on arrays
+limitArraySizeFloat(_arr, maxSize) =>
+    while array.size(_arr) > maxSize
+        array.pop(_arr)
+
+limitArraySizeInt(_arr, maxSize) =>
+    while array.size(_arr) > maxSize
+        array.pop(_arr)
+
+limitArraySizeString(_arr, maxSize) =>
+    while array.size(_arr) > maxSize
+        array.pop(_arr)
+
+//-----------------------------------------------------------------------------
+// CLASSIFY NEW SWING HIGHS AS HH/LH AND SWING LOWS AS HL/LL
+//-----------------------------------------------------------------------------
+string newHighType = na
+string newLowType  = na
+
+//--- Handle swing high
+if isSwingHigh
+    // Enforce minimal distance from previous swing high
+    lastHighBar = array.size(swingHighBars) > 0 ? array.get(swingHighBars, 0) : na
+    allowNewHigh = na(lastHighBar) or (swingHighBar - lastHighBar >= minSwingDist)
+
+    if allowNewHigh
+        lastHighPrice = array.size(swingHighPrices) > 0 ? array.get(swingHighPrices, 0) : na
+        newHighType := na(lastHighPrice) ? "HH" : (swingHighPrice > lastHighPrice ? "HH" : "LH")
+
+        array.unshift(swingHighPrices, swingHighPrice)
+        array.unshift(swingHighBars,   swingHighBar)
+        array.unshift(swingHighTypes,  newHighType)
+
+        limitArraySizeFloat(swingHighPrices, maxSwings)
+        limitArraySizeInt(swingHighBars,     maxSwings)
+        limitArraySizeString(swingHighTypes, maxSwings)
+
+//--- Handle swing low
+if isSwingLow
+    // Enforce minimal distance from previous swing low
+    lastLowBar = array.size(swingLowBars) > 0 ? array.get(swingLowBars, 0) : na
+    allowNewLow = na(lastLowBar) or (swingLowBar - lastLowBar >= minSwingDist)
+
+    if allowNewLow
+        lastLowPrice = array.size(swingLowPrices) > 0 ? array.get(swingLowPrices, 0) : na
+        newLowType := na(lastLowPrice) ? "LL" : (swingLowPrice < lastLowPrice ? "LL" : "HL")
+
+        array.unshift(swingLowPrices, swingLowPrice)
+        array.unshift(swingLowBars,   swingLowBar)
+        array.unshift(swingLowTypes,  newLowType)
+
+        limitArraySizeFloat(swingLowPrices, maxSwings)
+        limitArraySizeInt(swingLowBars,     maxSwings)
+        limitArraySizeString(swingLowTypes, maxSwings)
+
+//-----------------------------------------------------------------------------
+// TREND STATE INFERENCE (VERY SIMPLE)
+//-----------------------------------------------------------------------------
+//
+// Logic (educational, not perfect):
+//  - If last low is HL and last high is HH => Bullish structure.
+//  - If last low is LL and last high is LH => Bearish structure.
+//  - Otherwise => Neutral / Transition.
+//
+lastHighType = array.size(swingHighTypes) > 0 ? array.get(swingHighTypes, 0) : ""
+lastLowType  = array.size(swingLowTypes)  > 0 ? array.get(swingLowTypes, 0)  : ""
+
+bool bullishStructure = (lastLowType == "HL" and lastHighType == "HH")
+bool bearishStructure = (lastLowType == "LL" and lastHighType == "LH")
+
+string trendText  = bullishStructure ? "Bullish Structure" : bearishStructure ? "Bearish Structure" : "Neutral/Transition"
+color  trendColor = bullishStructure ? bullColor : bearishStructure ? bearColor : neutralColor
+
+//-----------------------------------------------------------------------------
+// VISUALS: LABELS + LINES
+//-----------------------------------------------------------------------------
+
+// Draw the swing points + labels when they form
+if isSwingHigh
+    label.new(
+         swingHighBar,
+         swingHighPrice,
+         newHighType,
+         style     = label.style_label_down,
+         textcolor = color.white,
+         color     = trendColor
+     )
+
+if isSwingLow
+    label.new(
+         swingLowBar,
+         swingLowPrice,
+         newLowType,
+         style     = label.style_label_up,
+         textcolor = color.white,
+         color     = trendColor
+     )
+
+// Draw lines connecting swings for extra clarity
+if showLines
+    // Connect highs
+    if array.size(swingHighBars) >= 2
+        int bar1 = array.get(swingHighBars, 1)
+        int bar2 = array.get(swingHighBars, 0)
+        float price1 = array.get(swingHighPrices, 1)
+        float price2 = array.get(swingHighPrices, 0)
+        line.new(bar1, price1, bar2, price2, extend = extend.none, color = color.new(trendColor, 0))
+
+    // Connect lows
+    if array.size(swingLowBars) >= 2
+        int bar1l = array.get(swingLowBars, 1)
+        int bar2l = array.get(swingLowBars, 0)
+        float price1l = array.get(swingLowPrices, 1)
+        float price2l = array.get(swingLowPrices, 0)
+        line.new(bar1l, price1l, bar2l, price2l, extend = extend.none, color = color.new(trendColor, 0))
+
+// Trend label top-left
+var label trendLabel = na
+if showTrendLabel
+    if na(trendLabel)
+        trendLabel := label.new(bar_index, high, trendText,
+             style = label.style_label_left,
+             textcolor = color.white,
+             color = trendColor)
+    else
+        label.set_x(trendLabel, bar_index)
+        label.set_y(trendLabel, high)
+        label.set_text(trendLabel, trendText)
+        label.set_color(trendLabel, trendColor)
+
+//-----------------------------------------------------------------------------
+// EDUCATIONAL NOTES
+//-----------------------------------------------------------------------------
+//
+// - You can combine this with the Liquidity Sweep Detector to study sweeps
+//   that occur *around* HL/HH or LL/LH zones.
+// - Use higher timeframes (H4 / Daily) to define structure and lower TF for
+//   entries.
+// - Adjust 'Pivot Length' and 'Min Bars Between Swings' per timeframe.

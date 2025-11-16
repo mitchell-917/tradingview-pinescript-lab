@@ -1,0 +1,156 @@
+//=============================================================================
+// Support & Resistance Zones [Lab]
+//=============================================================================
+//
+// WHAT THIS DOES
+//  - Detects swing highs & lows using pivots.
+//  - Plots horizontal levels derived from recent pivots.
+//  - Helps you visually identify areas where price has reacted multiple times.
+//
+// DESIGN
+//  - Light-weight, educational S/R tool.
+//  - Example of using pivots, arrays, and lines.
+//
+//=============================================================================
+//@version=5
+indicator("Support & Resistance Zones [Lab]", overlay = true, max_lines_count = 500)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupPivots = "Pivot Settings"
+pivotLen    = input.int(3, "Pivot Length (L/R)", minval = 1, group = groupPivots)
+maxLevels   = input.int(15, "Levels per Side (Support/Resistance)", minval = 3, maxval = 50, group = groupPivots)
+
+mergeTolerancePct = input.float(0.15, "Merge Levels Within % of ATR", minval = 0.0, step = 0.05, group = groupPivots,
+     tooltip = "If a new pivot is within this percentage of ATR of an existing level, they are merged into one zone.")
+
+groupVisual = "Visual"
+resColor    = input.color(color.new(color.red, 0),    "Resistance Color", group = groupVisual)
+supColor    = input.color(color.new(color.lime, 0),   "Support Color",    group = groupVisual)
+lineStyle   = input.string("Dashed", "Line Style", options = ["Solid", "Dashed", "Dotted"], group = groupVisual)
+
+opacity     = input.int(0, "Line Opacity", minval = 0, maxval = 100, group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// INTERNAL HELPERS
+//-----------------------------------------------------------------------------
+f_line_style(str) =>
+    str == "Solid"  ? line.style_solid :
+    str == "Dashed" ? line.style_dashed :
+    line.style_dotted
+
+atrLen  = 14
+atr     = ta.atr(atrLen)
+tolMult = mergeTolerancePct
+
+// Arrays for levels & lines
+var float[] resLevels = array.new_float()
+var line[]  resLines  = array.new_line()
+
+var float[] supLevels = array.new_float()
+var line[]  supLines  = array.new_line()
+
+// Keep array sizes under control
+f_trim(_levels, _lines, maxSize) =>
+    while array.size(_levels) > maxSize
+        array.pop(_levels)
+    while array.size(_lines) > maxSize
+        line ln = array.pop(_lines)
+        line.delete(ln)
+
+//-----------------------------------------------------------------------------
+// PIVOT DETECTION
+//-----------------------------------------------------------------------------
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+
+isSwingHigh = not na(ph)
+isSwingLow  = not na(pl)
+
+swingHighPrice = isSwingHigh ? ph : na
+swingLowPrice  = isSwingLow  ? pl : na
+swingHighBar   = isSwingHigh ? bar_index[pivotLen] : na
+swingLowBar    = isSwingLow  ? bar_index[pivotLen] : na
+
+//-----------------------------------------------------------------------------
+// ADD / MERGE RESISTANCE LEVELS
+//-----------------------------------------------------------------------------
+if isSwingHigh
+    float newLevel = swingHighPrice
+    bool merged    = false
+
+    // Try to merge with existing levels that are "close"
+    for i = 0 to array.size(resLevels) - 1
+        lvl = array.get(resLevels, i)
+        float distance = math.abs(lvl - newLevel)
+        if atr > 0 and distance <= atr * tolMult
+            // Merge by averaging
+            mergedLevel = (lvl + newLevel) / 2.0
+            array.set(resLevels, i, mergedLevel)
+
+            // Move the existing line to the new average
+            ln = array.get(resLines, i)
+            line.set_y1(ln, mergedLevel)
+            line.set_y2(ln, mergedLevel)
+
+            merged := true
+            break
+
+    // If not merged, create a new level + line
+    if not merged
+        array.unshift(resLevels, newLevel)
+        lnRes = line.new(
+             swingHighBar, newLevel,
+             bar_index,     newLevel,
+             extend     = extend.right,
+             color      = color.new(resColor, opacity),
+             style      = f_line_style(lineStyle),
+             width      = 1
+        )
+        array.unshift(resLines, lnRes)
+        f_trim(resLevels, resLines, maxLevels)
+
+//-----------------------------------------------------------------------------
+// ADD / MERGE SUPPORT LEVELS
+//-----------------------------------------------------------------------------
+if isSwingLow
+    float newLevelS = swingLowPrice
+    bool mergedS    = false
+
+    for i = 0 to array.size(supLevels) - 1
+        lvl = array.get(supLevels, i)
+        float distance = math.abs(lvl - newLevelS)
+        if atr > 0 and distance <= atr * tolMult
+            mergedLevel = (lvl + newLevelS) / 2.0
+            array.set(supLevels, i, mergedLevel)
+            ln = array.get(supLines, i)
+            line.set_y1(ln, mergedLevel)
+            line.set_y2(ln, mergedLevel)
+
+            mergedS := true
+            break
+
+    if not mergedS
+        array.unshift(supLevels, newLevelS)
+        lnSup = line.new(
+             swingLowBar, newLevelS,
+             bar_index,    newLevelS,
+             extend   = extend.right,
+             color    = color.new(supColor, opacity),
+             style    = f_line_style(lineStyle),
+             width    = 1
+        )
+        array.unshift(supLines, lnSup)
+        f_trim(supLevels, supLines, maxLevels)
+
+//-----------------------------------------------------------------------------
+// EDUCATIONAL NOTES
+//-----------------------------------------------------------------------------
+//
+// - This is a simple example of using:
+//      • Pivots for local highs/lows.
+//      • Arrays to store dynamic data.
+//      • Lines that extend right to form S/R zones.
+// - Combining this script with Market Structure + Liquidity Sweeps helps you
+//   see where sweeps occur relative to key zones.

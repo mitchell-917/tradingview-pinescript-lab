@@ -1,24 +1,212 @@
-// Webhook Alert Template Example
-// - Demonstrates structured JSON-style alert messages for webhooks.
+//=============================================================================
+// Webhook Alert Template [Lab]
+//=============================================================================
 //
+// WHAT THIS DEMONSTRATES
+//  - How to structure alert messages for webhook integrations
+//  - JSON payload formatting for external APIs
+//  - Dynamic message construction with market data
+//  - Best practices for automation-ready alerts
+//
+// USE CASES
+//  - Send signals to Discord/Telegram bots
+//  - Trigger automated trades via broker APIs
+//  - Log signals to external databases
+//  - Integration with custom trading systems
+//
+// WEBHOOK SETUP
+//  1. Create alert in TradingView (right-click chart → Add alert)
+//  2. Select this indicator and choose alert condition
+//  3. In "Notifications" tab, enable "Webhook URL"
+//  4. Paste your endpoint URL (e.g., https://your-server.com/webhook)
+//  5. The message will be sent as POST request body
+//
+//=============================================================================
 //@version=5
-indicator("Webhook Alert Template Example [Lab]", overlay = true)
+indicator("Webhook Alert Template [Lab]", overlay = false, max_bars_back = 5000)
 
-src = input.source(close, "Source")
-len = input.int(14, "RSI Length", minval = 1)
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupIndicator = "Indicator Settings"
+src = input.source(close, "Source", group = groupIndicator)
+len = input.int(14, "RSI Length", minval = 1, group = groupIndicator)
+ob  = input.int(70, "Overbought Level", minval = 50, maxval = 100, group = groupIndicator)
+os  = input.int(30, "Oversold Level", minval = 0, maxval = 50, group = groupIndicator)
 
+groupWebhook = "Webhook Settings"
+includeTimestamp = input.bool(true, "Include Timestamp", group = groupWebhook)
+includeTimeframe = input.bool(true, "Include Timeframe", group = groupWebhook)
+includeVolume = input.bool(true, "Include Volume", group = groupWebhook)
+
+//-----------------------------------------------------------------------------
+// CALCULATIONS
+//-----------------------------------------------------------------------------
 rsiVal = ta.rsi(src, len)
-ob     = input.int(70, "Overbought Level")
-os     = input.int(30, "Oversold Level")
 
-longSignal  = rsiVal <= os
-shortSignal = rsiVal >= ob
+// Signal conditions
+longSignal  = ta.crossover(rsiVal, os)   // RSI crosses back above oversold
+shortSignal = ta.crossunder(rsiVal, ob)  // RSI crosses back below overbought
 
-// Example JSON payload (string) – customize as needed.
-longMsg  = '{"signal": "long", "symbol": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + '}'
-shortMsg = '{"signal": "short", "symbol": "' + syminfo.ticker + '", "price": ' + str.tostring(close) + '}'
+//-----------------------------------------------------------------------------
+// WEBHOOK MESSAGE CONSTRUCTION
+//-----------------------------------------------------------------------------
+//
+// JSON Format Best Practices:
+//  - Use double quotes for JSON keys and string values
+//  - Escape special characters properly
+//  - Keep payload under 4KB for reliability
+//  - Include timestamp for event tracking
+//  - Add context data (symbol, timeframe, price)
+//
 
-alertcondition(longSignal,  title = "RSI Long Webhook",  message = longMsg)
-alertcondition(shortSignal, title = "RSI Short Webhook", message = shortMsg)
+// Helper function to build JSON payload
+f_buildWebhookMessage(signal, price, rsi) =>
+    // Start with basic signal info
+    var string msg = '{'
+    msg += '"action": "' + signal + '"'
+    msg += ', "symbol": "' + syminfo.ticker + '"'
+    msg += ', "exchange": "' + syminfo.prefix + '"'
+    msg += ', "price": ' + str.tostring(price, '#.##')
+    msg += ', "rsi": ' + str.tostring(rsi, '#.##')
+    
+    // Optional: Add timestamp (Unix milliseconds)
+    if includeTimestamp
+        msg += ', "timestamp": ' + str.tostring(time)
+    
+    // Optional: Add timeframe
+    if includeTimeframe
+        msg += ', "timeframe": "' + timeframe.period + '"'
+    
+    // Optional: Add volume
+    if includeVolume
+        msg += ', "volume": ' + str.tostring(volume, '#')
+    
+    msg += '}'
+    msg
 
-plot(rsiVal, "RSI", color = color.new(color.aqua, 0))
+// Build messages for each signal type
+longMsg  = f_buildWebhookMessage("BUY", close, rsiVal)
+shortMsg = f_buildWebhookMessage("SELL", close, rsiVal)
+
+//-----------------------------------------------------------------------------
+// ALERT CONDITIONS
+//-----------------------------------------------------------------------------
+//
+// When setting up the alert in TradingView:
+//  1. Condition: Select "RSI Long" or "RSI Short"
+//  2. Options: Choose "Once Per Bar Close" to avoid repainting
+//  3. Expiration: Set appropriate time limit
+//  4. Alert actions: Enable "Webhook URL" and paste your endpoint
+//  5. Message: Will automatically use the message defined below
+//
+
+alertcondition(
+    longSignal,
+    title = "RSI Long (Webhook)",
+    message = longMsg
+)
+
+alertcondition(
+    shortSignal,
+    title = "RSI Short (Webhook)",
+    message = shortMsg
+)
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+plot(rsiVal, "RSI", color = color.new(color.aqua, 0), linewidth = 2)
+
+// Reference levels
+hline(ob, "Overbought", color = color.new(color.red, 60))
+hline(os, "Oversold", color = color.new(color.lime, 60))
+hline(50, "Midline", color = color.new(color.gray, 80), linestyle = hline.style_dotted)
+
+// Highlight signal bars
+bgcolor(longSignal ? color.new(color.lime, 90) : na)
+bgcolor(shortSignal ? color.new(color.red, 90) : na)
+
+// Mark signals with shapes
+plotshape(
+    longSignal,
+    title = "Buy Signal",
+    style = shape.triangleup,
+    location = location.bottom,
+    color = color.new(color.lime, 0),
+    size = size.small,
+    text = "BUY"
+)
+
+plotshape(
+    shortSignal,
+    title = "Sell Signal",
+    style = shape.triangledown,
+    location = location.top,
+    color = color.new(color.red, 0),
+    size = size.small,
+    text = "SELL"
+)
+
+//-----------------------------------------------------------------------------
+// EXAMPLE WEBHOOK ENDPOINTS
+//-----------------------------------------------------------------------------
+//
+// Discord Webhook:
+//  URL format: https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN
+//  Note: Discord expects {"content": "your message"} format
+//  You may need a middleware to transform the JSON
+//
+// Telegram Bot:
+//  URL format: https://api.telegram.org/botYOUR_BOT_TOKEN/sendMessage?chat_id=YOUR_CHAT_ID&text=
+//  Append the message as URL parameter
+//
+// Custom Server:
+//  Any endpoint that accepts POST requests with JSON body
+//  Example: https://your-domain.com/api/tradingview-webhook
+//
+// SECURITY TIPS:
+//  - Use HTTPS endpoints only
+//  - Implement authentication (API keys, signatures)
+//  - Validate incoming webhook data
+//  - Rate limit your endpoints
+//  - Log all webhook calls for debugging
+//
+//-----------------------------------------------------------------------------
+// TESTING YOUR WEBHOOK
+//-----------------------------------------------------------------------------
+//
+// 1. Test with webhook.site first:
+//    - Go to https://webhook.site
+//    - Copy your unique URL
+//    - Use it in TradingView alert
+//    - Watch real-time incoming requests
+//
+// 2. Verify JSON structure:
+//    - Check that your endpoint receives valid JSON
+//    - Test with different signals
+//    - Validate all fields are present
+//
+// 3. Monitor for errors:
+//    - TradingView shows webhook delivery status in alert log
+//    - Check for 200 OK responses
+//    - Implement retry logic on your server
+//
+//-----------------------------------------------------------------------------
+// ADVANCED PATTERNS
+//-----------------------------------------------------------------------------
+//
+// Multiple Conditions:
+//  - Combine RSI with other indicators
+//  - Add trend filters (price above/below MA)
+//  - Include volume confirmation
+//
+// Dynamic Messaging:
+//  - Adjust message based on market conditions
+//  - Include stop-loss and take-profit levels
+//  - Add risk/reward calculations
+//
+// Batch Alerts:
+//  - Send summary of multiple signals
+//  - Aggregate data over time periods
+//  - Create daily/weekly reports

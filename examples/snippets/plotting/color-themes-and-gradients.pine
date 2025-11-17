@@ -1,20 +1,215 @@
-// Color Themes & Gradients Snippet
-// - Demonstrates dynamic colors based on value.
+//=============================================================================
+// Color Themes & Gradients [Lab]
+//=============================================================================
 //
+// WHAT THIS DEMONSTRATES
+//  - Dynamic color generation based on values
+//  - Gradient creation between two or more colors
+//  - Heat maps and intensity visualization
+//  - Custom color schemes for better data interpretation
+//
+// EDUCATIONAL FOCUS
+//  - color.from_gradient() function usage
+//  - Color transparency and blending
+//  - Conditional coloring strategies
+//  - Visual hierarchy through color
+//
+// PRACTICAL APPLICATIONS
+//  - Momentum indicators (hotter = stronger momentum)
+//  - Volatility displays (color intensity = volatility level)
+//  - Market regime identification
+//  - Multi-indicator dashboards
+//
+//=============================================================================
 //@version=5
-indicator("Color Themes & Gradients Snippet [Lab]", overlay = false)
+indicator("Color Themes & Gradients [Lab]", overlay = false)
 
-len = input.int(14, "Length")
-src = input.source(close, "Source")
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupData = "Data Settings"
+len = input.int(14, "RSI Length", minval = 1, maxval = 200, group = groupData)
+src = input.source(close, "Source", group = groupData)
 
+groupColor = "Color Theme"
+colorScheme = input.string("Red-Green", "Color Scheme", 
+     options = ["Red-Green", "Blue-Orange", "Heat Map", "Cool-Warm", "Custom"], group = groupColor)
+     
+customColor1 = input.color(color.purple, "Custom Color 1", group = groupColor)
+customColor2 = input.color(color.yellow, "Custom Color 2", group = groupColor)
+useTransparency = input.bool(false, "Use Transparency Gradient", group = groupColor)
+
+//-----------------------------------------------------------------------------
+// CALCULATIONS
+//-----------------------------------------------------------------------------
 rsiVal = ta.rsi(src, len)
 
-// Gradient: lower RSI -> greener, higher RSI -> redder.
-gradColor(value) =>
-    // Map 0-100 to 0-255
-    v = math.round(math.clamp(value, 0, 100))
-    // Simple 2-color blend approximation
-    vNorm = v / 100.0
-    color.from_gradient(vNorm, color.new(color.green, 0), color.new(color.red, 0))
+// Normalize RSI to 0-1 range for gradient calculations
+rsiNormalized = rsiVal / 100.0
 
-plot(rsiVal, "RSI", color = gradColor(rsiVal))
+//-----------------------------------------------------------------------------
+// COLOR GRADIENT FUNCTIONS
+//-----------------------------------------------------------------------------
+//
+// color.from_gradient(value, bottomColor, topColor)
+//  - value: 0.0 to 1.0 (0 = bottom color, 1 = top color)
+//  - bottomColor: Starting color
+//  - topColor: Ending color
+//  - Returns: Interpolated color between the two
+//
+
+// Method 1: Simple 2-color gradient
+f_simpleGradient(value, col1, col2) =>
+    // Clamp value between 0 and 1
+    v = math.clamp(value, 0.0, 1.0)
+    color.from_gradient(v, col1, col2)
+
+// Method 2: 3-color gradient (cold -> neutral -> hot)
+f_threeColorGradient(value) =>
+    v = math.clamp(value, 0.0, 1.0)
+    if v < 0.5
+        // Lower half: blue to yellow
+        normalized = v * 2.0  // 0-0.5 becomes 0-1
+        color.from_gradient(normalized, color.blue, color.yellow)
+    else
+        // Upper half: yellow to red
+        normalized = (v - 0.5) * 2.0  // 0.5-1 becomes 0-1
+        color.from_gradient(normalized, color.yellow, color.red)
+
+// Method 3: Heat map style (more granular)
+f_heatMapColor(value) =>
+    v = math.clamp(value, 0.0, 1.0)
+    // 5 zones: deep blue -> blue -> yellow -> orange -> red
+    if v < 0.2
+        color.from_gradient(v / 0.2, color.new(#000080, 0), color.blue)
+    else if v < 0.4
+        color.from_gradient((v - 0.2) / 0.2, color.blue, color.aqua)
+    else if v < 0.6
+        color.from_gradient((v - 0.4) / 0.2, color.aqua, color.yellow)
+    else if v < 0.8
+        color.from_gradient((v - 0.6) / 0.2, color.yellow, color.orange)
+    else
+        color.from_gradient((v - 0.8) / 0.2, color.orange, color.red)
+
+// Method 4: Transparency gradient (same color, varying opacity)
+f_transparencyGradient(value, baseColor) =>
+    v = math.clamp(value, 0.0, 1.0)
+    // Higher value = more opaque (less transparency)
+    transparency = int((1.0 - v) * 90)  // 90 = very transparent, 0 = opaque
+    color.new(baseColor, transparency)
+
+//-----------------------------------------------------------------------------
+// SELECT COLOR SCHEME
+//-----------------------------------------------------------------------------
+color plotColor = na
+
+switch colorScheme
+    "Red-Green" => 
+        plotColor := f_simpleGradient(rsiNormalized, color.green, color.red)
+    "Blue-Orange" => 
+        plotColor := f_simpleGradient(rsiNormalized, color.blue, color.orange)
+    "Heat Map" => 
+        plotColor := f_heatMapColor(rsiNormalized)
+    "Cool-Warm" => 
+        plotColor := f_threeColorGradient(rsiNormalized)
+    "Custom" => 
+        plotColor := f_simpleGradient(rsiNormalized, customColor1, customColor2)
+    =>
+        plotColor := color.blue
+
+// Apply transparency gradient if enabled
+if useTransparency
+    plotColor := f_transparencyGradient(rsiNormalized, color.blue)
+
+//-----------------------------------------------------------------------------
+// ADDITIONAL COLOR TECHNIQUES
+//-----------------------------------------------------------------------------
+
+// Technique 1: Conditional discrete colors (zones)
+color zoneColor = 
+     rsiVal > 70 ? color.new(color.red, 0) :    // Overbought = red
+     rsiVal > 50 ? color.new(color.orange, 0) : // Above mid = orange  
+     rsiVal > 30 ? color.new(color.yellow, 0) : // Below mid = yellow
+     color.new(color.lime, 0)                    // Oversold = lime
+
+// Technique 2: Momentum-based coloring
+rsiMomentum = ta.change(rsiVal)
+color momentumColor = rsiMomentum > 0 ? color.lime : color.red
+
+// Technique 3: Divergence highlighting (example)
+color barColor = close > open ? color.new(color.lime, 70) : color.new(color.red, 70)
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+
+// Main RSI line with gradient color
+plot(rsiVal, "RSI (Gradient)", color = plotColor, linewidth = 3)
+
+// Reference lines
+hline(70, "Overbought", color = color.new(color.red, 50))
+hline(50, "Midline", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
+hline(30, "Oversold", color = color.new(color.lime, 50))
+
+// Background zones with discrete colors
+bgcolor(rsiVal > 70 ? color.new(color.red, 95) : 
+        rsiVal < 30 ? color.new(color.lime, 95) : na, title = "OB/OS Zones")
+
+// Optional: Show momentum direction with bar colors
+barcolor(momentumColor, title = "Momentum Direction")
+
+//-----------------------------------------------------------------------------
+// COLOR THEORY TIPS
+//-----------------------------------------------------------------------------
+//
+// Choosing Effective Color Schemes:
+//
+// 1. Contrasting Colors:
+//    - Use opposite colors on the color wheel (red/green, blue/orange)
+//    - Ensures clear visual distinction
+//    - Good for binary states (bullish/bearish)
+//
+// 2. Analogous Colors:
+//    - Colors next to each other (blue, cyan, green)
+//    - Create smooth transitions
+//    - Good for continuous value ranges
+//
+// 3. Monochromatic:
+//    - Single color with varying lightness/saturation
+//    - Clean and professional look
+//    - Use transparency for intensity
+//
+// 4. Accessibility:
+//    - Consider colorblind users (~8% of males)
+//    - Avoid red-green only distinctions
+//    - Use shapes/patterns as backup signals
+//
+// 5. Light vs Dark Themes:
+//    - Test colors on both TradingView themes
+//    - Adjust transparency for readability
+//    - Some colors (yellow) work better on dark backgrounds
+//
+//-----------------------------------------------------------------------------
+// PRACTICAL EXAMPLES
+//-----------------------------------------------------------------------------
+//
+// Use Case 1: Trend Strength Indicator
+//  - Weak trend = blue (cool)
+//  - Strong trend = red (hot)
+//  - Gradient shows intensity
+//
+// Use Case 2: Volume Analysis
+//  - Low volume = transparent/light
+//  - High volume = opaque/bright
+//  - Helps identify significant moves
+//
+// Use Case 3: Multi-Timeframe Dashboard
+//  - Each timeframe gets a gradient row
+//  - Color indicates trend direction and strength
+//  - Quick visual scan of market conditions
+//
+// Use Case 4: Risk Levels
+//  - Green = low risk zone
+//  - Yellow = medium risk
+//  - Red = high risk
+//  - Helps with position sizing decisions

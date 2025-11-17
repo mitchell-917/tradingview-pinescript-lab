@@ -1,0 +1,77 @@
+MIT License
+
+Copyright (c) 2025 TradingView Pine Script Lab Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Additional Terms for Trading Scripts
+
+### Educational Purpose Disclaimer
+
+All Pine Script indicators and strategies in this repository are provided for
+educational and research purposes only. These scripts are:
+
+- NOT financial advice
+- NOT guaranteed to be profitable
+- NOT suitable for all markets or conditions
+- NOT tested for live trading environments
+
+### Risk Disclaimer
+
+Trading financial instruments involves substantial risk of loss and is not
+suitable for every investor. Past performance is not indicative of future
+results. Before using any script from this repository in live trading:
+
+1. Thoroughly backtest on historical data
+2. Paper trade extensively in real-time conditions
+3. Understand all assumptions and limitations
+4. Consult with qualified financial professionals
+5. Never risk more capital than you can afford to lose
+
+### No Warranty
+
+The scripts are provided "as is" without warranty of any kind. The authors
+and contributors:
+
+- Make no representations about accuracy or reliability
+- Are not responsible for any trading losses
+- Are not liable for any damages arising from use
+- Do not guarantee continued maintenance or updates
+
+### User Responsibility
+
+By using these scripts, you acknowledge that:
+
+- You are solely responsible for your trading decisions
+- You understand the risks involved in trading
+- You have the knowledge and experience to use these tools appropriately
+- You will not hold the authors or contributors liable for any losses
+
+---
+
+## Attribution
+
+If you use or adapt these scripts in your own work, please provide appropriate
+attribution by linking back to this repository.
+
+## Contact
+
+For questions about licensing, please open an issue in the repository.

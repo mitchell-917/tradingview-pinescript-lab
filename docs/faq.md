@@ -1,50 +1,63 @@
-# FAQ – Frequently Asked Questions
+# Frequently Asked Questions (FAQ)
 
-This FAQ covers common questions about using the scripts in this repository and working with TradingView Pine Script.
+Common questions about using the scripts in this repository and working with TradingView Pine Script v5.
 
 ---
 
 ## 1. How do I load a script into TradingView?
 
-1. Open TradingView and select a chart.
-2. Click **Pine Editor** at the bottom.
-3. Open the desired `.pine` file from this repo in your text editor.
-4. Copy all of its contents.
-5. Paste into the Pine Editor.
-6. Click **Save** and give your script a name.
-7. Click **Add to chart**.
+**Step-by-step instructions:**
 
-If there are errors, TradingView will highlight them in the editor panel.
+1. Open [TradingView](https://www.tradingview.com/) and select any chart
+2. Click the **Pine Editor** tab at the bottom of the screen
+3. Copy the entire contents of any `.pine` file from this repository
+4. Paste the code into the Pine Editor
+5. Click **Save** and give your script a meaningful name
+6. Click **Add to Chart**
 
----
-
-## 2. Why don’t I see any plots or signals?
-
-Check the following:
-
-- Did the script compile successfully? Look for errors or warnings.
-- For indicators:
-  - Confirm `overlay = true` if you expect plots on the price chart.
-  - Confirm `overlay = false` if it’s an oscillator that should appear in a separate pane.
-- For strategies:
-  - Make sure you added the *strategy* to the chart (not just an indicator).
-  - Check the time range and symbol – some logic may be specific to certain volatility/market types.
-
-Also verify that relevant settings (lengths, thresholds) are reasonable for the timeframe and market you’re looking at.
+If compilation errors occur, TradingView will highlight them with red underlines and provide error messages in the console below the editor.
 
 ---
 
-## 3. Are these scripts “no-repaint”?
+## 2. Why don't I see any plots or signals?
 
-Many scripts aim to be **historically consistent**, but not all scripts are strictly “no-repaint.”
+**Troubleshooting checklist:**
 
-Some common sources of repainting or delayed signals:
+✓ **Compilation:** Did the script compile without errors? Check for red error messages
 
-- **Pivots / swing points** – They need several bars to confirm, so historically they look perfect, but in real time they appear **after** a pattern is complete.
-- **`request.security()` with lookahead** – If a script uses future-looking security calls (rare here), that will be clearly commented as “for demonstration only.”
-- **Intrabar updates** – Realtime bars can change until they close; signals based on the current bar can appear/disappear during the bar’s formation.
+✓ **For Indicators:**
+- Verify `overlay = true` if you expect plots on the main price chart
+- Verify `overlay = false` if it's an oscillator (RSI, MACD) that should appear in a separate pane below
 
-Where repainting or delayed signals are inherent to the technique, we call it out in comments in the script.
+✓ **For Strategies:**
+- Ensure you added a *strategy* to the chart, not an indicator
+- Check the time range and symbol – some strategies are optimized for specific market conditions
+- Open the Strategy Tester tab to view backtest results
+
+✓ **Settings:** Verify that input parameters (lengths, thresholds) are appropriate for your timeframe and asset
+
+---
+
+## 3. Are these scripts "no-repaint"?
+
+We strive for **historical consistency**, but some techniques inherently involve delayed confirmation.
+
+**Common sources of repainting:**
+
+- **Pivot-based indicators** (swing highs/lows, fractals)
+  - Require several bars for confirmation
+  - Appear perfect historically but are delayed in real-time
+  - Examples: Support/Resistance zones, Market Structure tool
+
+- **Higher timeframe requests** with improper settings
+  - Using `request.security()` without `lookahead = barmerge.lookahead_off`
+  - All scripts in this repo use proper non-repainting settings
+
+- **Intrabar updates** on real-time bars
+  - Current bar signals can change until the bar closes
+  - Solution: Wait for bar close confirmation
+
+**Our approach:** Scripts that involve delayed confirmation or potential repainting include clear comments explaining the behavior. See [`examples/tutorials/03_no-repaint_tips_and_tricks.md`](../examples/tutorials/03_no-repaint_tips_and_tricks.md) for detailed guidance.
 
 ---
 
@@ -119,15 +132,16 @@ When combining scripts:
 
 ## 8. How do I learn Pine Script faster?
 
-Suggestions:
+**Recommended learning approach:**
 
-1. Start with **beginner indicators** in `indicators/beginner/`.
-2. Change one thing at a time (lengths, conditions, plot styles).
-3. Read the comments **before** and **after** running the script.
-4. Use the Pine Editor’s built-in **reference** (search the manual for functions).
-5. Gradually move to **intermediate** and **advanced** scripts.
+1. **Start simple:** Begin with [`ma-crossover-indicator.pine`](../indicators/ma-crossover-indicator.pine) and [`rsi-basic-indicator.pine`](../indicators/rsi-basic-indicator.pine)
+2. **Read first:** Study the header comments and inline documentation before running
+3. **Experiment actively:** Change one parameter at a time (lengths, colors, conditions)
+4. **Follow the learning paths:** See the README for [Beginner/Intermediate/Advanced tracks](../README.md#-learning-paths)
+5. **Use official resources:** TradingView's [Pine Script Reference](https://www.tradingview.com/pine-script-reference/v5/) is invaluable
+6. **Build projects:** Combine concepts from multiple scripts to create your own tools
 
-The more you modify and experiment, the faster you’ll learn.
+**Pro tip:** The best way to learn is by breaking things (safely on a chart). Modify scripts, observe what changes, and understand why.
 
 ---
 
@@ -146,7 +160,24 @@ There’s no guarantee every request will be implemented, but clear, realistic i
 
 ## 10. Can I use these scripts commercially?
 
-Check the `LICENSE` file in the root of the repository.
+Yes, with conditions. This repository is licensed under the **MIT License**, which permits:
+
+✓ Commercial use
+✓ Modification
+✓ Distribution
+✓ Private use
+
+**Requirements:**
+- Include the original MIT license and copyright notice
+- Scripts are provided "as-is" without warranty
+
+**Important:** These are educational tools, not guaranteed profitable systems. Always:
+- Test thoroughly before any commercial use
+- Understand the logic completely
+- Implement proper risk management
+- Comply with all applicable financial regulations
+
+See the [`LICENSE`](../LICENSE) file for complete terms.
 
 - Many educational repos use permissive licenses (e.g., MIT), which typically allow commercial use with attribution.
 - Some licenses might have additional conditions.

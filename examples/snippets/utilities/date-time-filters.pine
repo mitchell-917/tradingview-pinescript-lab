@@ -1,24 +1,330 @@
-// Date/Time Filters Snippet
-// - Shows how to limit logic to specific sessions, days, or date ranges.
+//=============================================================================
+// Date/Time Filters [Lab]
+//=============================================================================
 //
+// WHAT THIS DEMONSTRATES
+//  - Session-based trading windows
+//  - Day-of-week filtering
+//  - Date range restrictions
+//  - Time-based strategy optimization
+//
+// EDUCATIONAL FOCUS
+//  - time() and session functions
+//  - dayofweek constants and comparisons
+//  - timestamp handling
+//  - Combining multiple time filters
+//
+// WHY THIS MATTERS
+//  - Avoid low-liquidity periods
+//  - Target specific market sessions
+//  - Backtest on specific date ranges
+//  - Optimize for time-based patterns
+//
+//=============================================================================
 //@version=5
-indicator("Date/Time Filters Snippet [Lab]", overlay = true)
+indicator("Date/Time Filters [Lab]", overlay = true, max_bars_back = 5000)
 
-sessionStr = input.session("0900-1700", "Session")
-enableSessionFilter = input.bool(true, "Enable Session Filter")
-enableDayFilter     = input.bool(false, "Only Trade Mon-Fri")
-enableDateRange     = input.bool(false, "Enable Date Range Filter")
-fromDate            = input.time(timestamp("2023-01-01T00:00:00Z"), "From Date")
-toDate              = input.time(timestamp("2025-01-01T00:00:00Z"), "To Date")
+//-----------------------------------------------------------------------------
+// INPUTS - SESSION FILTER
+//-----------------------------------------------------------------------------
+groupSession = "Session Filter"
+enableSessionFilter = input.bool(true, "Enable Session Filter", group = groupSession,
+     tooltip = "Only allow bars within specified session times")
+sessionStr = input.session("0930-1600", "Session Times (Exchange Time)", group = groupSession,
+     tooltip = "Format: HHMM-HHMM. Example: 0930-1600 for NY regular hours")
 
-inSession  = not enableSessionFilter or session.ismarket(sessionStr)
-dayOfWeek  = dayofweek
-isBusinessDay = dayOfWeek >= dayofweek.monday and dayOfWeek <= dayofweek.friday
-inDay      = not enableDayFilter or isBusinessDay
+// Popular session presets examples:
+// London: 0300-1200 (EST)
+// New York: 0930-1600 (EST)
+// Tokyo: 1900-0400 (EST)
+// Overlap: 0800-1200 (London/NY overlap)
 
-inRange    = not enableDateRange or (time >= fromDate and time <= toDate)
+//-----------------------------------------------------------------------------
+// INPUTS - DAY OF WEEK FILTER
+//-----------------------------------------------------------------------------
+groupDay = "Day of Week Filter"
+enableDayFilter = input.bool(false, "Enable Day of Week Filter", group = groupDay)
+tradingDays = input.string("Mon-Fri", "Trading Days",
+     options = ["Mon-Fri", "Monday Only", "Tuesday-Thursday", "Weekends", "Custom"],
+     group = groupDay)
 
-allowedBar = inSession and inDay and inRange
+// Custom day selection (only used if "Custom" selected above)
+tradeMonday    = input.bool(true, "Monday", group = groupDay)
+tradeTuesday   = input.bool(true, "Tuesday", group = groupDay)
+tradeWednesday = input.bool(true, "Wednesday", group = groupDay)
+tradeThursday  = input.bool(true, "Thursday", group = groupDay)
+tradeFriday    = input.bool(true, "Friday", group = groupDay)
+tradeSaturday  = input.bool(false, "Saturday", group = groupDay)
+tradeSunday    = input.bool(false, "Sunday", group = groupDay)
 
-// Example: highlight allowed bars.
-bgcolor(allowedBar ? color.new(color.green, 90) : na)
+//-----------------------------------------------------------------------------
+// INPUTS - DATE RANGE FILTER
+//-----------------------------------------------------------------------------
+groupDate = "Date Range Filter"
+enableDateRange = input.bool(false, "Enable Date Range Filter", group = groupDate,
+     tooltip = "Limit to specific calendar dates")
+fromDate = input.time(timestamp("2023-01-01T00:00:00"), "From Date", group = groupDate)
+toDate   = input.time(timestamp("2025-12-31T23:59:59"), "To Date", group = groupDate)
+
+//-----------------------------------------------------------------------------
+// INPUTS - INTRADAY TIME FILTERS
+//-----------------------------------------------------------------------------
+groupIntraday = "Intraday Filters"
+avoidFirstMinutes = input.bool(true, "Avoid First N Minutes", group = groupIntraday)
+firstMinutesToAvoid = input.int(30, "Minutes to Skip at Open", minval = 0, maxval = 240, group = groupIntraday)
+
+avoidLastMinutes = input.bool(true, "Avoid Last N Minutes", group = groupIntraday)
+lastMinutesToAvoid = input.int(30, "Minutes to Skip Before Close", minval = 0, maxval = 240, group = groupIntraday)
+
+//-----------------------------------------------------------------------------
+// SESSION DETECTION
+//-----------------------------------------------------------------------------
+//
+// session.ismarket() checks if current bar is within specified session
+// Alternatively, use: not na(time(timeframe.period, sessionStr))
+//
+
+inSession = not enableSessionFilter or not na(time(timeframe.period, sessionStr))
+
+//-----------------------------------------------------------------------------
+// DAY OF WEEK LOGIC
+//-----------------------------------------------------------------------------
+//
+// dayofweek returns a constant:
+//  - dayofweek.sunday = 1
+//  - dayofweek.monday = 2
+//  - dayofweek.tuesday = 3
+//  - dayofweek.wednesday = 4
+//  - dayofweek.thursday = 5
+//  - dayofweek.friday = 6
+//  - dayofweek.saturday = 7
+//
+
+currentDayOfWeek = dayofweek
+
+// Check day based on selected preset or custom settings
+bool inDay = true
+
+if enableDayFilter
+    if tradingDays == "Mon-Fri"
+        inDay := currentDayOfWeek >= dayofweek.monday and currentDayOfWeek <= dayofweek.friday
+    else if tradingDays == "Monday Only"
+        inDay := currentDayOfWeek == dayofweek.monday
+    else if tradingDays == "Tuesday-Thursday"
+        inDay := currentDayOfWeek >= dayofweek.tuesday and currentDayOfWeek <= dayofweek.thursday
+    else if tradingDays == "Weekends"
+        inDay := currentDayOfWeek == dayofweek.saturday or currentDayOfWeek == dayofweek.sunday
+    else if tradingDays == "Custom"
+        // Check each day individually based on checkboxes
+        inDay := (currentDayOfWeek == dayofweek.monday and tradeMonday) or
+                 (currentDayOfWeek == dayofweek.tuesday and tradeTuesday) or
+                 (currentDayOfWeek == dayofweek.wednesday and tradeWednesday) or
+                 (currentDayOfWeek == dayofweek.thursday and tradeThursday) or
+                 (currentDayOfWeek == dayofweek.friday and tradeFriday) or
+                 (currentDayOfWeek == dayofweek.saturday and tradeSaturday) or
+                 (currentDayOfWeek == dayofweek.sunday and tradeSunday)
+
+//-----------------------------------------------------------------------------
+// DATE RANGE CHECK
+//-----------------------------------------------------------------------------
+//
+// time represents the timestamp of the current bar (Unix milliseconds)
+// Compare against input timestamps to create date range
+//
+
+inRange = not enableDateRange or (time >= fromDate and time <= toDate)
+
+//-----------------------------------------------------------------------------
+// INTRADAY TIME FILTERS
+//-----------------------------------------------------------------------------
+//
+// These filters avoid the first and last N minutes of a session
+// Useful for avoiding volatile open/close periods
+//
+
+// Get session state changes
+newSession = inSession and not inSession[1]
+sessionEnd = not inSession and inSession[1]
+
+// Track session start time
+var int sessionStartTime = na
+if newSession
+    sessionStartTime := time
+
+// Calculate minutes since session start
+minutesSinceOpen = na(sessionStartTime) ? 999999 : 
+                   int((time - sessionStartTime) / (60 * 1000))
+
+// Check if we're past the opening exclusion period
+pastOpeningPeriod = not avoidFirstMinutes or minutesSinceOpen >= firstMinutesToAvoid
+
+// For closing period, we need to look ahead, which isn't possible in Pine
+// So we approximate by checking if we're in the last N minutes of the timeframe
+// This is a simplified approach - for precise control, use specific end times
+inClosingPeriod = false  // Simplified for this example
+
+pastClosingPeriod = not avoidLastMinutes or not inClosingPeriod
+
+//-----------------------------------------------------------------------------
+// COMBINED FILTER
+//-----------------------------------------------------------------------------
+
+allowedBar = inSession and inDay and inRange and pastOpeningPeriod and pastClosingPeriod
+
+//-----------------------------------------------------------------------------
+// VISUALIZATION
+//-----------------------------------------------------------------------------
+
+// Background highlighting for allowed vs restricted bars
+bgcolor(allowedBar ? color.new(color.green, 95) : color.new(color.red, 95), 
+     title = "Trading Window")
+
+// Session boundaries
+var line sessionStartLine = na
+var line sessionEndLine = na
+var label sessionLabel = na
+
+if newSession and enableSessionFilter
+    // Mark session start
+    sessionStartLine := line.new(bar_index, low, bar_index, high, 
+         color = color.new(color.blue, 30), width = 2, style = line.style_dashed)
+    sessionLabel := label.new(bar_index, high, "Session Start", 
+         style = label.style_label_down, color = color.blue, textcolor = color.white, size = size.small)
+
+if sessionEnd and enableSessionFilter
+    // Mark session end
+    sessionEndLine := line.new(bar_index, low, bar_index, high, 
+         color = color.new(color.orange, 30), width = 2, style = line.style_dashed)
+
+// Plot day of week for reference
+plotchar(enableDayFilter, "Day Filter Active", "D", location.top, 
+     color = inDay ? color.lime : color.red, size = size.tiny)
+
+//-----------------------------------------------------------------------------
+// STATISTICS TABLE
+//-----------------------------------------------------------------------------
+
+var table statsTable = table.new(position.top_right, 2, 5, border_width = 1)
+
+if barstate.islast
+    table.cell(statsTable, 0, 0, "Filter Status", bgcolor = color.new(color.gray, 50), text_color = color.white)
+    table.cell(statsTable, 1, 0, "", bgcolor = color.new(color.gray, 50))
+    
+    // Session status
+    sessionStatus = inSession ? "✓ IN" : "✗ OUT"
+    sessionColor = inSession ? color.lime : color.red
+    table.cell(statsTable, 0, 1, "Session")
+    table.cell(statsTable, 1, 1, sessionStatus, text_color = sessionColor)
+    
+    // Day status
+    dayNames = array.new_string()
+    array.push(dayNames, "Sun")
+    array.push(dayNames, "Mon")
+    array.push(dayNames, "Tue")
+    array.push(dayNames, "Wed")
+    array.push(dayNames, "Thu")
+    array.push(dayNames, "Fri")
+    array.push(dayNames, "Sat")
+    
+    dayName = array.get(dayNames, currentDayOfWeek - 1)
+    dayStatus = inDay ? "✓ " + dayName : "✗ " + dayName
+    dayColor = inDay ? color.lime : color.red
+    table.cell(statsTable, 0, 2, "Day")
+    table.cell(statsTable, 1, 2, dayStatus, text_color = dayColor)
+    
+    // Date range status
+    dateStatus = inRange ? "✓ IN RANGE" : "✗ OUT"
+    dateColor = inRange ? color.lime : color.red
+    table.cell(statsTable, 0, 3, "Date Range")
+    table.cell(statsTable, 1, 3, dateStatus, text_color = dateColor)
+    
+    // Overall status
+    overallStatus = allowedBar ? "✓ ALLOWED" : "✗ FILTERED"
+    overallColor = allowedBar ? color.lime : color.red
+    table.cell(statsTable, 0, 4, "TRADING", bgcolor = color.new(color.gray, 70))
+    table.cell(statsTable, 1, 4, overallStatus, text_color = overallColor, bgcolor = color.new(color.gray, 70))
+
+//-----------------------------------------------------------------------------
+// USAGE IN STRATEGIES
+//-----------------------------------------------------------------------------
+//
+// To use these filters in a strategy:
+//
+// if allowedBar and yourEntryCondition
+//     strategy.entry("Long", strategy.long)
+//
+// This ensures trades only happen within allowed time windows
+//
+//-----------------------------------------------------------------------------
+// COMMON USE CASES
+//-----------------------------------------------------------------------------
+//
+// 1. New York Session Only:
+//    Session: 0930-1600
+//    Days: Mon-Fri
+//    Purpose: Trade US regular hours only
+//
+// 2. London/NY Overlap:
+//    Session: 0800-1200 (EST)
+//    Days: Tue-Thu (avoid Monday and Friday)
+//    Purpose: Highest liquidity period
+//
+// 3. Asian Session:
+//    Session: 1900-0400 (EST)
+//    Days: Sun-Thu (Asian week)
+//    Purpose: Trade Tokyo/Sydney hours
+//
+// 4. Earnings Season Filter:
+//    Date Range: Exclude specific weeks
+//    Purpose: Avoid increased volatility
+//
+// 5. Crypto 24/7 with Weekend Break:
+//    Days: Mon-Fri only
+//    Purpose: Take weekends off even in 24/7 markets
+//
+//-----------------------------------------------------------------------------
+// OPTIMIZATION TIPS
+//-----------------------------------------------------------------------------
+//
+// Time-Based Pattern Discovery:
+//  - Test performance by session (AM vs PM)
+//  - Compare different days of week
+//  - Identify best/worst trading hours
+//  - Optimize entry/exit timing
+//
+// Avoid These Periods:
+//  - First 5-15 minutes (volatile, wide spreads)
+//  - Last 15 minutes (position squaring, unpredictable)
+//  - Major news releases (use economic calendar)
+//  - Low liquidity times (lunch hours, holidays)
+//  - Overnight gaps (for day traders)
+//
+// Best Practice:
+//  - Backtest with and without filters
+//  - Measure impact on win rate and profit factor
+//  - Balance between opportunity and risk
+//  - Consider your specific market and strategy type
+//
+//-----------------------------------------------------------------------------
+// ADVANCED PATTERNS
+//-----------------------------------------------------------------------------
+//
+// Dynamic Session Based on Volatility:
+//  - Widen session during high volatility
+//  - Narrow during low volatility
+//  - Use ATR to determine conditions
+//
+// Holiday Detection:
+//  - Manually exclude specific dates
+//  - Avoid trading on major holidays
+//  - Half-day session adjustments
+//
+// Moonphase/Seasonal Filters:
+//  - Month-of-year effects
+//  - Quarter-end patterns
+//  - Tax season considerations
+//
+// Multiple Session Windows:
+//  - Trade both London and NY separately
+//  - Different strategies per session
+//  - Combine Asian momentum with European mean reversion

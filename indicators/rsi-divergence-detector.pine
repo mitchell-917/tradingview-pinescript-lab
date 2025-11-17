@@ -1,0 +1,304 @@
+//=============================================================================
+// RSI Divergence Detector [Lab]
+//=============================================================================
+//
+// WHAT THIS DEMONSTRATES
+//  - Automatic divergence detection
+//  - Pivot-based pattern recognition
+//  - Drawing lines to highlight divergences
+//  - Bullish and bearish divergence identification
+//
+// EDUCATIONAL FOCUS
+//  - Working with historical pivots
+//  - Comparing price action vs indicator values
+//  - Line drawing and management
+//  - Pattern validation logic
+//
+// DIVERGENCE TYPES
+//  1. Regular Bullish: Price makes lower low, RSI makes higher low
+//  2. Regular Bearish: Price makes higher high, RSI makes lower high
+//  3. Hidden Bullish: Price makes higher low, RSI makes lower low
+//  4. Hidden Bearish: Price makes lower high, RSI makes higher high
+//
+//=============================================================================
+//@version=5
+indicator("RSI Divergence Detector [Lab]", overlay = false, max_lines_count = 100, max_labels_count = 100)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupRSI = "RSI Settings"
+rsiLength = input.int(14, "RSI Length", minval = 1, group = groupRSI)
+rsiSource = input.source(close, "RSI Source", group = groupRSI)
+
+groupPivot = "Pivot Settings"
+pivotLength = input.int(5, "Pivot Lookback Length", minval = 1, maxval = 50, group = groupPivot,
+     tooltip = "Number of bars on each side to confirm a pivot")
+     
+groupDivergence = "Divergence Settings"
+lookbackPivots = input.int(5, "Pivot Lookback Range", minval = 1, maxval = 20, group = groupDivergence,
+     tooltip = "How many pivots back to check for divergences")
+     
+showRegularBull = input.bool(true, "Show Regular Bullish Divergence", group = groupDivergence)
+showRegularBear = input.bool(true, "Show Regular Bearish Divergence", group = groupDivergence)
+showHiddenBull = input.bool(true, "Show Hidden Bullish Divergence", group = groupDivergence)
+showHiddenBear = input.bool(true, "Show Hidden Bearish Divergence", group = groupDivergence)
+
+groupVisual = "Visual Settings"
+bullishColor = input.color(color.new(color.lime, 0), "Bullish Divergence Color", group = groupVisual)
+bearishColor = input.color(color.new(color.red, 0), "Bearish Divergence Color", group = groupVisual)
+hiddenOpacity = input.int(40, "Hidden Divergence Opacity", minval = 0, maxval = 100, group = groupVisual)
+
+//-----------------------------------------------------------------------------
+// RSI CALCULATION
+//-----------------------------------------------------------------------------
+rsi = ta.rsi(rsiSource, rsiLength)
+
+//-----------------------------------------------------------------------------
+// PIVOT DETECTION
+//-----------------------------------------------------------------------------
+//
+// Pivot highs and lows form the basis for divergence detection
+// We need to:
+//  1. Detect pivots in both price and RSI
+//  2. Store them for comparison
+//  3. Look for divergence patterns
+//
+
+// Price pivots (using high/low)
+pricePivotHigh = ta.pivothigh(high, pivotLength, pivotLength)
+pricePivotLow = ta.pivotlow(low, pivotLength, pivotLength)
+
+// RSI pivots
+rsiPivotHigh = ta.pivothigh(rsi, pivotLength, pivotLength)
+rsiPivotLow = ta.pivotlow(rsi, pivotLength, pivotLength)
+
+// Store pivot information
+var array<float> priceHighs = array.new<float>()
+var array<float> priceLows = array.new<float>()
+var array<int> priceHighBars = array.new<int>()
+var array<int> priceLowBars = array.new<int>()
+
+var array<float> rsiHighs = array.new<float>()
+var array<float> rsiLows = array.new<float>()
+var array<int> rsiHighBars = array.new<int>()
+var array<int> rsiLowBars = array.new<int>()
+
+// Add new pivots to arrays
+if not na(pricePivotHigh) and not na(rsiPivotHigh)
+    array.unshift(priceHighs, pricePivotHigh)
+    array.unshift(priceHighBars, bar_index[pivotLength])
+    array.unshift(rsiHighs, rsiPivotHigh)
+    array.unshift(rsiHighBars, bar_index[pivotLength])
+    
+    // Limit array size
+    if array.size(priceHighs) > lookbackPivots
+        array.pop(priceHighs)
+        array.pop(priceHighBars)
+        array.pop(rsiHighs)
+        array.pop(rsiHighBars)
+
+if not na(pricePivotLow) and not na(rsiPivotLow)
+    array.unshift(priceLows, pricePivotLow)
+    array.unshift(priceLowBars, bar_index[pivotLength])
+    array.unshift(rsiLows, rsiPivotLow)
+    array.unshift(rsiLowBars, bar_index[pivotLength])
+    
+    // Limit array size
+    if array.size(priceLows) > lookbackPivots
+        array.pop(priceLows)
+        array.pop(priceLowBars)
+        array.pop(rsiLows)
+        array.pop(rsiLowBars)
+
+//-----------------------------------------------------------------------------
+// DIVERGENCE DETECTION FUNCTIONS
+//-----------------------------------------------------------------------------
+
+// Check for regular bullish divergence (price lower low, RSI higher low)
+f_regularBullishDiv() =>
+    bool found = false
+    if array.size(priceLows) >= 2 and array.size(rsiLows) >= 2
+        // Compare most recent low with previous low
+        currentPriceLow = array.get(priceLows, 0)
+        prevPriceLow = array.get(priceLows, 1)
+        currentRsiLow = array.get(rsiLows, 0)
+        prevRsiLow = array.get(rsiLows, 1)
+        
+        // Price makes lower low, RSI makes higher low
+        if currentPriceLow < prevPriceLow and currentRsiLow > prevRsiLow
+            found := true
+    found
+
+// Check for regular bearish divergence (price higher high, RSI lower high)
+f_regularBearishDiv() =>
+    bool found = false
+    if array.size(priceHighs) >= 2 and array.size(rsiHighs) >= 2
+        currentPriceHigh = array.get(priceHighs, 0)
+        prevPriceHigh = array.get(priceHighs, 1)
+        currentRsiHigh = array.get(rsiHighs, 0)
+        prevRsiHigh = array.get(rsiHighs, 1)
+        
+        // Price makes higher high, RSI makes lower high
+        if currentPriceHigh > prevPriceHigh and currentRsiHigh < prevRsiHigh
+            found := true
+    found
+
+// Check for hidden bullish divergence (price higher low, RSI lower low)
+f_hiddenBullishDiv() =>
+    bool found = false
+    if array.size(priceLows) >= 2 and array.size(rsiLows) >= 2
+        currentPriceLow = array.get(priceLows, 0)
+        prevPriceLow = array.get(priceLows, 1)
+        currentRsiLow = array.get(rsiLows, 0)
+        prevRsiLow = array.get(rsiLows, 1)
+        
+        // Price makes higher low, RSI makes lower low
+        if currentPriceLow > prevPriceLow and currentRsiLow < prevRsiLow
+            found := true
+    found
+
+// Check for hidden bearish divergence (price lower high, RSI higher high)
+f_hiddenBearishDiv() =>
+    bool found = false
+    if array.size(priceHighs) >= 2 and array.size(rsiHighs) >= 2
+        currentPriceHigh = array.get(priceHighs, 0)
+        prevPriceHigh = array.get(priceHighs, 1)
+        currentRsiHigh = array.get(rsiHighs, 0)
+        prevRsiHigh = array.get(rsiHighs, 1)
+        
+        // Price makes lower high, RSI makes higher high
+        if currentPriceHigh < prevPriceHigh and currentRsiHigh > prevRsiHigh
+            found := true
+    found
+
+//-----------------------------------------------------------------------------
+// DETECT AND DRAW DIVERGENCES
+//-----------------------------------------------------------------------------
+
+// Detect divergences
+regBullDiv = showRegularBull and f_regularBullishDiv()
+regBearDiv = showRegularBear and f_regularBearishDiv()
+hidBullDiv = showHiddenBull and f_hiddenBullishDiv()
+hidBearDiv = showHiddenBear and f_hiddenBearishDiv()
+
+// Draw lines for bullish divergences
+if regBullDiv and array.size(priceLows) >= 2
+    x1 = array.get(rsiLowBars, 1)
+    y1 = array.get(rsiLows, 1)
+    x2 = array.get(rsiLowBars, 0)
+    y2 = array.get(rsiLows, 0)
+    
+    line.new(x1, y1, x2, y2, color = bullishColor, width = 2)
+    label.new(x2, y2, "RBD", style = label.style_label_up, 
+         color = bullishColor, textcolor = color.white, size = size.small,
+         tooltip = "Regular Bullish Divergence")
+
+if hidBullDiv and array.size(priceLows) >= 2
+    x1 = array.get(rsiLowBars, 1)
+    y1 = array.get(rsiLows, 1)
+    x2 = array.get(rsiLowBars, 0)
+    y2 = array.get(rsiLows, 0)
+    
+    line.new(x1, y1, x2, y2, color = color.new(bullishColor, hiddenOpacity), 
+         width = 2, style = line.style_dashed)
+    label.new(x2, y2, "HBD", style = label.style_label_up, 
+         color = color.new(bullishColor, hiddenOpacity), textcolor = color.white, size = size.tiny,
+         tooltip = "Hidden Bullish Divergence")
+
+// Draw lines for bearish divergences
+if regBearDiv and array.size(priceHighs) >= 2
+    x1 = array.get(rsiHighBars, 1)
+    y1 = array.get(rsiHighs, 1)
+    x2 = array.get(rsiHighBars, 0)
+    y2 = array.get(rsiHighs, 0)
+    
+    line.new(x1, y1, x2, y2, color = bearishColor, width = 2)
+    label.new(x2, y2, "RBD", style = label.style_label_down, 
+         color = bearishColor, textcolor = color.white, size = size.small,
+         tooltip = "Regular Bearish Divergence")
+
+if hidBearDiv and array.size(priceHighs) >= 2
+    x1 = array.get(rsiHighBars, 1)
+    y1 = array.get(rsiHighs, 1)
+    x2 = array.get(rsiHighBars, 0)
+    y2 = array.get(rsiHighs, 0)
+    
+    line.new(x1, y1, x2, y2, color = color.new(bearishColor, hiddenOpacity), 
+         width = 2, style = line.style_dashed)
+    label.new(x2, y2, "HBD", style = label.style_label_down, 
+         color = color.new(bearishColor, hiddenOpacity), textcolor = color.white, size = size.tiny,
+         tooltip = "Hidden Bearish Divergence")
+
+//-----------------------------------------------------------------------------
+// PLOTTING
+//-----------------------------------------------------------------------------
+plot(rsi, "RSI", color = color.aqua, linewidth = 2)
+hline(70, "Overbought", color = color.new(color.red, 50))
+hline(50, "Midline", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
+hline(30, "Oversold", color = color.new(color.lime, 50))
+
+// Highlight divergence bars
+bgcolor(regBullDiv ? color.new(bullishColor, 90) : na, title = "Regular Bullish Div")
+bgcolor(regBearDiv ? color.new(bearishColor, 90) : na, title = "Regular Bearish Div")
+
+//-----------------------------------------------------------------------------
+// TRADING WITH DIVERGENCES
+//-----------------------------------------------------------------------------
+//
+// Understanding Divergences:
+//
+// 1. REGULAR DIVERGENCES (Reversal Signals):
+//    - Bullish: Look for long entries after confirmation
+//    - Bearish: Look for short entries after confirmation
+//    - Wait for price confirmation (candlestick patterns, trend breaks)
+//    - Best in overbought/oversold zones
+//
+// 2. HIDDEN DIVERGENCES (Continuation Signals):
+//    - Bullish: Trend continuation in uptrend (pullback buying opportunity)
+//    - Bearish: Trend continuation in downtrend (bounce shorting opportunity)
+//    - Trade in direction of main trend
+//    - Use as entry timing in established trends
+//
+// 3. CONFIRMATION REQUIREMENTS:
+//    - Don't trade divergence alone
+//    - Wait for price action confirmation
+//    - Check higher timeframe trend
+//    - Use with support/resistance levels
+//    - Consider volume confirmation
+//
+// 4. RISK MANAGEMENT:
+//    - Place stop beyond the pivot point
+//    - Use recent swing high/low as invalidation
+//    - Regular divergences have wider stops
+//    - Hidden divergences often have tighter stops
+//
+// 5. FALSE SIGNALS:
+//    - Divergences can persist for multiple pivots
+//    - Not all divergences lead to reversals
+//    - Stronger trends ignore divergences
+//    - Require additional confluence for reliability
+//
+//-----------------------------------------------------------------------------
+// ADVANCED TIPS
+//-----------------------------------------------------------------------------
+//
+// Multi-Indicator Divergence:
+//  - Check RSI, MACD, and Stochastic together
+//  - Triple divergence = stronger signal
+//  - Different indicators may show at different times
+//
+// Timeframe Considerations:
+//  - Higher timeframe divergences more reliable
+//  - Combine HTF divergence with LTF entry
+//  - Example: Daily divergence, 4H entry
+//
+// Class A vs Class B:
+//  - Class A: Both pivots in extreme zones (OB/OS)
+//  - Class B: Only one pivot in extreme zone
+//  - Class A typically more reliable
+//
+// Triple Divergence:
+//  - Three consecutive pivots showing divergence
+//  - Extremely rare but very powerful
+//  - Often marks major turning points

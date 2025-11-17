@@ -1,0 +1,476 @@
+//=============================================================================
+// Smart Money Concepts Analyzer [Lab]
+//=============================================================================
+//
+// WHAT THIS DEMONSTRATES
+//  - Order block detection and tracking
+//  - Fair value gap (FVG) identification
+//  - Break of structure (BOS) and change of character (CHoCH)
+//  - Supply and demand zone analysis
+//  - Smart money concepts implementation
+//
+// EDUCATIONAL FOCUS
+//  - Advanced price action analysis
+//  - Box drawing for zones
+//  - Structure break detection
+//  - Array management for tracking zones
+//
+// SMART MONEY CONCEPTS
+//  1. Order Blocks: Last bullish/bearish candle before strong move
+//  2. Fair Value Gaps: Price gaps that may get filled
+//  3. Break of Structure: Breaking previous high/low
+//  4. Liquidity Levels: Areas where stops may be clustered
+//
+//=============================================================================
+//@version=5
+indicator("Smart Money Concepts Analyzer [Lab]", overlay = true, max_boxes_count = 50, max_lines_count = 50)
+
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupOB = "Order Blocks"
+showOrderBlocks = input.bool(true, "Show Order Blocks", group = groupOB)
+obLength = input.int(3, "Order Block Detection Length", minval = 1, maxval = 10, group = groupOB,
+     tooltip = "Number of candles to look back for order block validation")
+maxOrderBlocks = input.int(5, "Max Order Blocks to Show", minval = 1, maxval = 20, group = groupOB)
+obBullColor = input.color(color.new(color.blue, 80), "Bullish OB Color", group = groupOB)
+obBearColor = input.color(color.new(color.red, 80), "Bearish OB Color", group = groupOB)
+
+groupFVG = "Fair Value Gaps"
+showFVG = input.bool(true, "Show Fair Value Gaps", group = groupFVG)
+fvgThreshold = input.float(0.0, "Minimum FVG Size (%)", minval = 0, maxval = 5, step = 0.1, group = groupFVG,
+     tooltip = "Minimum gap size as percentage of price to be considered FVG")
+maxFVG = input.int(5, "Max FVGs to Show", minval = 1, maxval = 20, group = groupFVG)
+fvgBullColor = input.color(color.new(color.green, 85), "Bullish FVG Color", group = groupFVG)
+fvgBearColor = input.color(color.new(color.maroon, 85), "Bearish FVG Color", group = groupFVG)
+
+groupStructure = "Market Structure"
+showStructure = input.bool(true, "Show Structure Breaks", group = groupStructure)
+structureLength = input.int(10, "Structure Pivot Length", minval = 5, maxval = 50, group = groupStructure)
+showBOS = input.bool(true, "Show Break of Structure (BOS)", group = groupStructure)
+showCHoCH = input.bool(true, "Show Change of Character (CHoCH)", group = groupStructure)
+
+groupLiquidity = "Liquidity Levels"
+showLiquidity = input.bool(true, "Show Liquidity Levels", group = groupLiquidity)
+liqLength = input.int(20, "Liquidity Pivot Length", minval = 10, maxval = 100, group = groupLiquidity,
+     tooltip = "Length for detecting equal highs/lows (liquidity pools)")
+
+//-----------------------------------------------------------------------------
+// ORDER BLOCK DETECTION
+//-----------------------------------------------------------------------------
+//
+// Order Block Logic:
+//  - Bullish OB: Last down candle before strong up move
+//  - Bearish OB: Last up candle before strong down move
+//  - Validation: Subsequent move must be significant
+//
+
+// Arrays to store order blocks
+var array<box> bullishOBs = array.new<box>()
+var array<box> bearishOBs = array.new<box>()
+
+// Detect bullish order block
+f_detectBullishOB() =>
+    bool detected = false
+    int obBar = na
+    
+    // Look for last bearish candle before bullish momentum
+    if close > open // Current candle is bullish
+        // Check if previous candles show the pattern
+        for i = 1 to obLength
+            if close[i] < open[i] // Bearish candle
+                // Check if subsequent move was strong
+                upMove = close - low[i]
+                candleSize = high[i] - low[i]
+                
+                if upMove > candleSize * 1.5 // Moved 1.5x the OB candle size
+                    detected := true
+                    obBar := i
+                    break
+    
+    [detected, obBar]
+
+// Detect bearish order block
+f_detectBearishOB() =>
+    bool detected = false
+    int obBar = na
+    
+    if close < open // Current candle is bearish
+        for i = 1 to obLength
+            if close[i] > open[i] // Bullish candle
+                downMove = high[i] - close
+                candleSize = high[i] - low[i]
+                
+                if downMove > candleSize * 1.5
+                    detected := true
+                    obBar := i
+                    break
+    
+    [detected, obBar]
+
+// Draw order blocks
+if showOrderBlocks
+    [bullOBDetected, bullOBBar] = f_detectBullishOB()
+    [bearOBDetected, bearOBBar] = f_detectBearishOB()
+    
+    // Create bullish order block
+    if bullOBDetected and not na(bullOBBar)
+        obBox = box.new(
+             left = bar_index[bullOBBar],
+             top = high[bullOBBar],
+             right = bar_index,
+             bottom = low[bullOBBar],
+             bgcolor = obBullColor,
+             border_color = color.new(color.blue, 0),
+             border_width = 1,
+             extend = extend.right,
+             text = "Bull OB",
+             text_size = size.tiny,
+             text_color = color.blue)
+        
+        array.unshift(bullishOBs, obBox)
+        
+        // Limit number of order blocks
+        if array.size(bullishOBs) > maxOrderBlocks
+            oldBox = array.pop(bullishOBs)
+            box.delete(oldBox)
+    
+    // Create bearish order block
+    if bearOBDetected and not na(bearOBBar)
+        obBox = box.new(
+             left = bar_index[bearOBBar],
+             top = high[bearOBBar],
+             right = bar_index,
+             bottom = low[bearOBBar],
+             bgcolor = obBearColor,
+             border_color = color.new(color.red, 0),
+             border_width = 1,
+             extend = extend.right,
+             text = "Bear OB",
+             text_size = size.tiny,
+             text_color = color.red)
+        
+        array.unshift(bearishOBs, obBox)
+        
+        if array.size(bearishOBs) > maxOrderBlocks
+            oldBox = array.pop(bearishOBs)
+            box.delete(oldBox)
+
+//-----------------------------------------------------------------------------
+// FAIR VALUE GAP (FVG) DETECTION
+//-----------------------------------------------------------------------------
+//
+// FVG Logic:
+//  - Bullish FVG: Gap between candle 3 bars ago high and candle 1 bar ago low
+//  - Bearish FVG: Gap between candle 3 bars ago low and candle 1 bar ago high
+//  - Price leaves an unfilled gap that represents inefficiency
+//
+
+var array<box> bullishFVGs = array.new<box>()
+var array<box> bearishFVGs = array.new<box>()
+
+if showFVG
+    // Bullish FVG: low[1] > high[3]
+    bullGapSize = low[1] - high[3]
+    bullGapPercent = (bullGapSize / close) * 100
+    
+    if bullGapSize > 0 and bullGapPercent >= fvgThreshold
+        fvgBox = box.new(
+             left = bar_index[3],
+             top = low[1],
+             right = bar_index,
+             bottom = high[3],
+             bgcolor = fvgBullColor,
+             border_color = color.new(color.green, 50),
+             border_width = 1,
+             border_style = line.style_dashed,
+             extend = extend.right,
+             text = "FVG",
+             text_size = size.tiny,
+             text_color = color.green)
+        
+        array.unshift(bullishFVGs, fvgBox)
+        
+        if array.size(bullishFVGs) > maxFVG
+            oldBox = array.pop(bullishFVGs)
+            box.delete(oldBox)
+    
+    // Bearish FVG: high[1] < low[3]
+    bearGapSize = low[3] - high[1]
+    bearGapPercent = (bearGapSize / close) * 100
+    
+    if bearGapSize > 0 and bearGapPercent >= fvgThreshold
+        fvgBox = box.new(
+             left = bar_index[3],
+             top = low[3],
+             right = bar_index,
+             bottom = high[1],
+             bgcolor = fvgBearColor,
+             border_color = color.new(color.maroon, 50),
+             border_width = 1,
+             border_style = line.style_dashed,
+             extend = extend.right,
+             text = "FVG",
+             text_size = size.tiny,
+             text_color = color.maroon)
+        
+        array.unshift(bearishFVGs, fvgBox)
+        
+        if array.size(bearishFVGs) > maxFVG
+            oldBox = array.pop(bearishFVGs)
+            box.delete(oldBox)
+
+//-----------------------------------------------------------------------------
+// MARKET STRUCTURE (BOS & CHoCH)
+//-----------------------------------------------------------------------------
+//
+// Market Structure Concepts:
+//  - BOS (Break of Structure): Price breaks previous swing high (uptrend) 
+//    or swing low (downtrend) - continuation signal
+//  - CHoCH (Change of Character): Price breaks counter-trend structure -
+//    potential reversal signal
+//
+
+// Track market structure state
+var string marketStructure = "neutral"
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastSwingHighBar = na
+var int lastSwingLowBar = na
+
+// Detect swing highs and lows
+swingHigh = ta.pivothigh(high, structureLength, structureLength)
+swingLow = ta.pivotlow(low, structureLength, structureLength)
+
+// Update swing points
+if not na(swingHigh)
+    lastSwingHigh := swingHigh
+    lastSwingHighBar := bar_index[structureLength]
+
+if not na(swingLow)
+    lastSwingLow := swingLow
+    lastSwingLowBar := bar_index[structureLength]
+
+// Detect structure breaks
+var line bosLine = na
+var label bosLabel = na
+var line chochLine = na
+var label chochLabel = na
+
+if showStructure and not na(lastSwingHigh) and not na(lastSwingLow)
+    
+    // Break of Structure (BOS)
+    if showBOS
+        // Bullish BOS: uptrend continues by breaking previous high
+        if close > lastSwingHigh and marketStructure == "uptrend"
+            if not na(bosLine)
+                line.delete(bosLine)
+                label.delete(bosLabel)
+            
+            bosLine := line.new(lastSwingHighBar, lastSwingHigh, bar_index, lastSwingHigh,
+                 color = color.new(color.lime, 0), width = 2, style = line.style_dashed)
+            bosLabel := label.new(bar_index, lastSwingHigh, "BOS ↑",
+                 style = label.style_label_down, color = color.lime, textcolor = color.white, size = size.small)
+        
+        // Bearish BOS: downtrend continues by breaking previous low
+        if close < lastSwingLow and marketStructure == "downtrend"
+            if not na(bosLine)
+                line.delete(bosLine)
+                label.delete(bosLabel)
+            
+            bosLine := line.new(lastSwingLowBar, lastSwingLow, bar_index, lastSwingLow,
+                 color = color.new(color.red, 0), width = 2, style = line.style_dashed)
+            bosLabel := label.new(bar_index, lastSwingLow, "BOS ↓",
+                 style = label.style_label_up, color = color.red, textcolor = color.white, size = size.small)
+    
+    // Change of Character (CHoCH)
+    if showCHoCH
+        // Bullish CHoCH: downtrend breaks, potential reversal up
+        if close > lastSwingHigh and marketStructure != "uptrend"
+            if not na(chochLine)
+                line.delete(chochLine)
+                label.delete(chochLabel)
+            
+            chochLine := line.new(lastSwingHighBar, lastSwingHigh, bar_index, lastSwingHigh,
+                 color = color.new(color.yellow, 0), width = 2)
+            chochLabel := label.new(bar_index, lastSwingHigh, "CHoCH ↑",
+                 style = label.style_label_down, color = color.yellow, textcolor = color.black, size = size.small)
+            
+            marketStructure := "uptrend"
+        
+        // Bearish CHoCH: uptrend breaks, potential reversal down
+        if close < lastSwingLow and marketStructure != "downtrend"
+            if not na(chochLine)
+                line.delete(chochLine)
+                label.delete(chochLabel)
+            
+            chochLine := line.new(lastSwingLowBar, lastSwingLow, bar_index, lastSwingLow,
+                 color = color.new(color.orange, 0), width = 2)
+            chochLabel := label.new(bar_index, lastSwingLow, "CHoCH ↓",
+                 style = label.style_label_up, color = color.orange, textcolor = color.black, size = size.small)
+            
+            marketStructure := "downtrend"
+
+//-----------------------------------------------------------------------------
+// LIQUIDITY LEVELS
+//-----------------------------------------------------------------------------
+//
+// Liquidity Concept:
+//  - Equal highs/lows attract stop losses
+//  - Smart money often targets these levels
+//  - Break of liquidity can signal strong moves
+//
+
+var array<line> liquidityLines = array.new<line>()
+var array<label> liquidityLabels = array.new<label>()
+
+if showLiquidity
+    // Detect equal highs (sell-side liquidity)
+    recentHigh = ta.highest(high, liqLength)
+    equalHighs = 0
+    
+    for i = 1 to liqLength
+        if math.abs(high[i] - recentHigh) / recentHigh < 0.001 // Within 0.1%
+            equalHighs += 1
+    
+    // If we have multiple equal highs, mark as liquidity zone
+    if equalHighs >= 2 and high == recentHigh
+        liqLine = line.new(bar_index - liqLength, recentHigh, bar_index, recentHigh,
+             color = color.new(color.red, 30), width = 2, style = line.style_dotted,
+             extend = extend.right)
+        liqLabel = label.new(bar_index, recentHigh, "💧 SSL",
+             style = label.style_label_down, color = color.new(color.red, 70), 
+             textcolor = color.white, size = size.tiny,
+             tooltip = "Sell-Side Liquidity")
+        
+        array.unshift(liquidityLines, liqLine)
+        array.unshift(liquidityLabels, liqLabel)
+    
+    // Detect equal lows (buy-side liquidity)
+    recentLow = ta.lowest(low, liqLength)
+    equalLows = 0
+    
+    for i = 1 to liqLength
+        if math.abs(low[i] - recentLow) / recentLow < 0.001
+            equalLows += 1
+    
+    if equalLows >= 2 and low == recentLow
+        liqLine = line.new(bar_index - liqLength, recentLow, bar_index, recentLow,
+             color = color.new(color.lime, 30), width = 2, style = line.style_dotted,
+             extend = extend.right)
+        liqLabel = label.new(bar_index, recentLow, "💧 BSL",
+             style = label.style_label_up, color = color.new(color.lime, 70), 
+             textcolor = color.white, size = size.tiny,
+             tooltip = "Buy-Side Liquidity")
+        
+        array.unshift(liquidityLines, liqLine)
+        array.unshift(liquidityLabels, liqLabel)
+    
+    // Clean up old liquidity levels (keep last 10)
+    if array.size(liquidityLines) > 10
+        oldLine = array.pop(liquidityLines)
+        oldLabel = array.pop(liquidityLabels)
+        line.delete(oldLine)
+        label.delete(oldLabel)
+
+//-----------------------------------------------------------------------------
+// TRADING WITH SMART MONEY CONCEPTS
+//-----------------------------------------------------------------------------
+//
+// Core Trading Principles:
+//
+// 1. ORDER BLOCK STRATEGY
+//    - Price often returns to order blocks before continuing
+//    - Bullish OB = potential support for long entries
+//    - Bearish OB = potential resistance for short entries
+//    - Best when combined with FVG fills
+//    - Entry: Price touches OB + confirmation candle
+//    - Stop: Below/above the order block
+//
+// 2. FAIR VALUE GAP TRADING
+//    - FVGs act as magnets for price
+//    - 70-80% of FVGs get filled eventually
+//    - Partial fills (50%) are common
+//    - Entry: Anticipate FVG fill or trade the bounce
+//    - Don't assume all FVGs fill immediately
+//
+// 3. STRUCTURE BREAK STRATEGY
+//    - BOS = Trade continuation (add to position)
+//    - CHoCH = Potential reversal (new position or exit)
+//    - Wait for structure break confirmation
+//    - Look for retest of broken structure
+//    - Entry: After break + retest + confirmation
+//
+// 4. LIQUIDITY GRAB STRATEGY
+//    - Price often sweeps liquidity before reversing
+//    - SSL sweep = potential long opportunity
+//    - BSL sweep = potential short opportunity
+//    - Watch for "stop hunts" at liquidity levels
+//    - Entry: After liquidity grab + reversal confirmation
+//
+// 5. CONFLUENCE SETUPS (Highest Probability)
+//    - Price at Order Block + FVG + Liquidity level
+//    - CHoCH + Order Block retest
+//    - BOS + FVG fill + Structure support
+//    - Multiple confirmations increase win rate
+//
+//-----------------------------------------------------------------------------
+// ENTRY CONFIRMATION CHECKLIST
+//-----------------------------------------------------------------------------
+//
+// Before Taking a Trade:
+//  ✓ Identify market structure (up/down/neutral)
+//  ✓ Wait for CHoCH or BOS confirmation
+//  ✓ Find Order Block or FVG in trade direction
+//  ✓ Check for nearby liquidity levels
+//  ✓ Wait for price to reach zone
+//  ✓ Get confirmation candle (engulfing, pin bar, etc.)
+//  ✓ Enter with defined stop and target
+//  ✓ Manage risk (1-2% per trade maximum)
+//
+//-----------------------------------------------------------------------------
+// RISK MANAGEMENT
+//-----------------------------------------------------------------------------
+//
+// Stop Loss Placement:
+//  - Below/above order block extreme
+//  - Beyond liquidity level
+//  - Behind structure (swing high/low)
+//  - 1-2x ATR from entry
+//
+// Take Profit Targets:
+//  - Next FVG or order block
+//  - Previous structure high/low
+//  - Risk:Reward minimum 1:2
+//  - Scale out at multiple levels
+//
+// Position Sizing:
+//  - Risk 1% per trade
+//  - Increase size only on high confluence
+//  - Reduce size on lower timeframes
+//
+//-----------------------------------------------------------------------------
+// ADVANCED TIPS
+//-----------------------------------------------------------------------------
+//
+// Timeframe Correlation:
+//  - HTF order blocks more significant
+//  - LTF for entry refinement
+//  - HTF structure + LTF order block = powerful setup
+//
+// Session Analysis:
+//  - London/NY open often create liquidity grabs
+//  - Asian session forms ranges for breakouts
+//  - Watch for stop hunts during low liquidity
+//
+// Volume Confirmation:
+//  - High volume at order blocks = stronger
+//  - Low volume at liquidity = potential fake-out
+//  - Volume precedes price
+//
+// Common Mistakes:
+//  - Trading every order block (wait for confluence)
+//  - Ignoring market structure
+//  - Entering before confirmation
+//  - Overleveraging on single setups
+//  - Not adapting to market conditions

@@ -1,23 +1,272 @@
-// Table Dashboard Snippet
-// - Shows how to build a small on-chart table with metrics.
+//=============================================================================
+// Table Dashboard Snippet [Lab]
+//=============================================================================
 //
+// WHAT THIS DEMONSTRATES
+//  - Creating on-chart tables for data display
+//  - Dynamic metric calculation and formatting
+//  - Professional dashboard layouts
+//  - Real-time statistics and monitoring
+//
+// EDUCATIONAL FOCUS
+//  - table.new() and table.cell() functions
+//  - Positioning and styling tables
+//  - String formatting for numbers
+//  - Conditional formatting based on values
+//
+// USE CASES
+//  - Trading statistics summary
+//  - Multi-indicator overview
+//  - Performance metrics display
+//  - Market condition monitoring
+//
+//=============================================================================
 //@version=5
-indicator("Table Dashboard Snippet [Lab]", overlay = true)
+indicator("Table Dashboard Snippet [Lab]", overlay = true, max_bars_back = 5000)
 
-lenRsi = input.int(14, "RSI Length")
-lenAtr = input.int(14, "ATR Length")
+//-----------------------------------------------------------------------------
+// INPUTS
+//-----------------------------------------------------------------------------
+groupMetrics = "Metrics"
+lenRsi = input.int(14, "RSI Length", minval = 1, group = groupMetrics)
+lenAtr = input.int(14, "ATR Length", minval = 1, group = groupMetrics)
+lenMa  = input.int(50, "MA Length", minval = 1, group = groupMetrics)
 
+groupDisplay = "Display Settings"
+tablePosition = input.string("Top Right", "Table Position",
+     options = ["Top Left", "Top Center", "Top Right", 
+                "Middle Left", "Middle Center", "Middle Right",
+                "Bottom Left", "Bottom Center", "Bottom Right"],
+     group = groupDisplay)
+     
+showBorder = input.bool(true, "Show Border", group = groupDisplay)
+textSize = input.string("Normal", "Text Size",
+     options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"],
+     group = groupDisplay)
+
+useColorCoding = input.bool(true, "Use Color Coding", group = groupDisplay)
+
+//-----------------------------------------------------------------------------
+// CALCULATIONS
+//-----------------------------------------------------------------------------
 rsiVal = ta.rsi(close, lenRsi)
 atrVal = ta.atr(lenAtr)
+maVal  = ta.sma(close, lenMa)
 
-var table dash = table.new(position.top_left, 2, 3, border_width = 1)
+// Additional metrics
+volumeAvg = ta.sma(volume, 20)
+volumeRatio = volume / volumeAvg
+
+// Price change calculations
+dailyChange = ta.change(close, 1)
+dailyChangePct = (dailyChange / close[1]) * 100
+
+// Trend determination
+trend = close > maVal ? "Bullish" : close < maVal ? "Bearish" : "Neutral"
+
+// Volatility assessment
+atrPct = (atrVal / close) * 100
+volatility = atrPct > 3 ? "High" : atrPct > 1.5 ? "Medium" : "Low"
+
+//-----------------------------------------------------------------------------
+// HELPER FUNCTIONS
+//-----------------------------------------------------------------------------
+
+// Convert position string to position constant
+f_getPosition(posStr) =>
+    posStr == "Top Left" ? position.top_left :
+    posStr == "Top Center" ? position.top_center :
+    posStr == "Top Right" ? position.top_right :
+    posStr == "Middle Left" ? position.middle_left :
+    posStr == "Middle Center" ? position.middle_center :
+    posStr == "Middle Right" ? position.middle_right :
+    posStr == "Bottom Left" ? position.bottom_left :
+    posStr == "Bottom Center" ? position.bottom_center :
+    position.bottom_right
+
+// Convert text size string to size constant
+f_getTextSize(sizeStr) =>
+    sizeStr == "Tiny" ? size.tiny :
+    sizeStr == "Small" ? size.small :
+    sizeStr == "Normal" ? size.normal :
+    sizeStr == "Large" ? size.large :
+    sizeStr == "Huge" ? size.huge :
+    size.auto
+
+// Conditional color based on value and thresholds
+f_getRsiColor(value) =>
+    value > 70 ? color.new(color.red, 0) :
+    value > 50 ? color.new(color.orange, 0) :
+    value > 30 ? color.new(color.yellow, 0) :
+    color.new(color.lime, 0)
+
+f_getChangeColor(value) =>
+    value > 0 ? color.new(color.lime, 0) : 
+    value < 0 ? color.new(color.red, 0) : 
+    color.new(color.gray, 0)
+
+//-----------------------------------------------------------------------------
+// TABLE CREATION
+//-----------------------------------------------------------------------------
+//
+// Table Structure:
+//  - Row 0: Headers
+//  - Rows 1-N: Data rows
+//  - Column 0: Metric names
+//  - Column 1: Metric values
+//  - Column 2 (optional): Additional info
+//
+
+var table dash = table.new(
+     f_getPosition(tablePosition),
+     columns = 3,
+     rows = 8,
+     border_width = showBorder ? 1 : 0,
+     border_color = color.new(color.gray, 30),
+     frame_width = showBorder ? 1 : 0,
+     frame_color = color.new(color.gray, 30)
+ )
+
+//-----------------------------------------------------------------------------
+// TABLE POPULATION (Updated every bar on last bar)
+//-----------------------------------------------------------------------------
 
 if barstate.islast
-    table.cell(dash, 0, 0, "Metric", text_color = color.white, bgcolor = color.new(color.black, 0))
-    table.cell(dash, 1, 0, "Value",  text_color = color.white, bgcolor = color.new(color.black, 0))
+    // Define colors
+    color headerBg = color.new(color.gray, 50)
+    color headerText = color.white
+    color cellBg = color.new(color.gray, 90)
+    color cellText = color.white
+    
+    sizeSetting = f_getTextSize(textSize)
+    
+    // === HEADER ROW ===
+    table.cell(dash, 0, 0, "Metric", 
+         text_color = headerText, bgcolor = headerBg, text_size = sizeSetting)
+    table.cell(dash, 1, 0, "Value", 
+         text_color = headerText, bgcolor = headerBg, text_size = sizeSetting)
+    table.cell(dash, 2, 0, "Status", 
+         text_color = headerText, bgcolor = headerBg, text_size = sizeSetting)
+    
+    // === ROW 1: SYMBOL INFO ===
+    table.cell(dash, 0, 1, "Symbol",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 1, 1, syminfo.ticker,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 2, 1, timeframe.period,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 2: PRICE ===
+    table.cell(dash, 0, 2, "Price",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 1, 2, str.tostring(close, format.mintick),
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    changeText = str.tostring(dailyChangePct, "#.##") + "%"
+    changeColor = useColorCoding ? f_getChangeColor(dailyChange) : cellText
+    table.cell(dash, 2, 2, changeText,
+         text_color = changeColor, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 3: RSI ===
+    table.cell(dash, 0, 3, "RSI (" + str.tostring(lenRsi) + ")",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 1, 3, str.tostring(rsiVal, "#.##"),
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    rsiStatus = rsiVal > 70 ? "OB" : rsiVal < 30 ? "OS" : "OK"
+    rsiColor = useColorCoding ? f_getRsiColor(rsiVal) : cellText
+    table.cell(dash, 2, 3, rsiStatus,
+         text_color = rsiColor, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 4: ATR ===
+    table.cell(dash, 0, 4, "ATR (" + str.tostring(lenAtr) + ")",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 1, 4, str.tostring(atrVal, format.mintick),
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    atrPctText = str.tostring(atrPct, "#.##") + "%"
+    table.cell(dash, 2, 4, atrPctText,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 5: TREND ===
+    table.cell(dash, 0, 5, "Trend (" + str.tostring(lenMa) + " MA)",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 1, 5, trend,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 2, 5, volatility,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 6: VOLUME ===
+    table.cell(dash, 0, 6, "Volume",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    volumeText = str.tostring(volume, format.volume)
+    table.cell(dash, 1, 6, volumeText,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    volRatioText = str.tostring(volumeRatio, "#.##") + "x"
+    volColor = useColorCoding and volumeRatio > 1.5 ? color.lime : cellText
+    table.cell(dash, 2, 6, volRatioText,
+         text_color = volColor, bgcolor = cellBg, text_size = sizeSetting)
+    
+    // === ROW 7: TIMESTAMP ===
+    table.cell(dash, 0, 7, "Updated",
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    timeText = str.format("{0,date,HH:mm:ss}", time)
+    table.cell(dash, 1, 7, timeText,
+         text_color = cellText, bgcolor = cellBg, text_size = sizeSetting)
+    table.cell(dash, 2, 7, "✓",  // Checkmark
+         text_color = color.lime, bgcolor = cellBg, text_size = sizeSetting)
 
-    table.cell(dash, 0, 1, "RSI")
-    table.cell(dash, 1, 1, str.tostring(rsiVal, format.mintick))
-
-    table.cell(dash, 0, 2, "ATR")
-    table.cell(dash, 1, 2, str.tostring(atrVal, format.mintick))
+//-----------------------------------------------------------------------------
+// TABLE DESIGN BEST PRACTICES
+//-----------------------------------------------------------------------------
+//
+// 1. Layout:
+//    - Keep tables compact (max 5-8 rows for quick scanning)
+//    - Use consistent column widths
+//    - Align numbers right, text left
+//    - Group related metrics together
+//
+// 2. Colors:
+//    - Use subtle backgrounds (high transparency)
+//    - Reserve bright colors for alerts/warnings
+//    - Ensure readability on both light/dark themes
+//    - Test color contrast ratios
+//
+// 3. Content:
+//    - Show only actionable information
+//    - Format numbers appropriately (decimals, percentages)
+//    - Use abbreviations to save space
+//    - Update timestamps help verify data freshness
+//
+// 4. Performance:
+//    - Only update table on last bar (barstate.islast)
+//    - Avoid complex calculations inside table updates
+//    - Pre-calculate all values before table population
+//    - Use var for table creation (only create once)
+//
+// 5. User Experience:
+//    - Make position customizable
+//    - Allow users to toggle sections
+//    - Provide text size options
+//    - Document what each metric means
+//
+//-----------------------------------------------------------------------------
+// ADVANCED PATTERNS
+//-----------------------------------------------------------------------------
+//
+// Multi-Page Dashboard:
+//  - Create multiple tables for different data categories
+//  - Use input to switch between "pages"
+//  - Trading stats, market stats, risk metrics
+//
+// Conditional Display:
+//  - Show/hide rows based on market conditions
+//  - Highlight important metrics dynamically
+//  - Flash colors on threshold breaches
+//
+// Integration with Strategies:
+//  - Display strategy performance metrics
+//  - Win rate, profit factor, drawdown
+//  - Open positions and P&L
+//
+// Comparison Tables:
+//  - Multiple timeframe comparison
+//  - Multiple symbol comparison
+//  - Historical vs current values

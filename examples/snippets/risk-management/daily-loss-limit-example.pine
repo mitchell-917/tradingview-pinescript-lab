@@ -1,35 +1,282 @@
-// Daily Loss Limit Example
-// - Stops trading for the rest of the day after a max loss is hit.
+//=============================================================================
+// Daily Loss Limit [Lab]
+//=============================================================================
 //
+// WHAT THIS DEMONSTRATES
+//  - Implementing daily loss limits for risk control
+//  - Session-based equity tracking
+//  - Dynamic trading permission based on P&L
+//  - Professional risk management practices
+//
+// WHY THIS MATTERS
+//  - Protects against catastrophic daily drawdowns
+//  - Enforces discipline during losing streaks
+//  - Prevents revenge trading
+//  - Essential for professional trading operations
+//
+// REAL-WORLD APPLICATION
+//  - Day trading risk management
+//  - Prop firm requirement compliance
+//  - Emotional trading prevention
+//  - Capital preservation strategy
+//
+//=============================================================================
 //@version=5
-strategy("Daily Loss Limit Example [Lab]", overlay = true, initial_capital = 10000)
+strategy(
+     "Daily Loss Limit [Lab]",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.1
+ )
 
-maxDailyLossPct = input.float(2.0, "Max Daily Loss (% of Equity)", minval = 0.1, maxval = 50.0)
+//-----------------------------------------------------------------------------
+// INPUTS - RISK MANAGEMENT
+//-----------------------------------------------------------------------------
+groupRisk = "Risk Management"
+maxDailyLossPct = input.float(2.0, "Max Daily Loss (% of Starting Equity)",
+     minval = 0.1, maxval = 50.0, step = 0.1, group = groupRisk,
+     tooltip = "Trading stops if daily loss exceeds this percentage")
+     
+maxDailyLossDollar = input.float(200.0, "Max Daily Loss ($)",
+     minval = 0, step = 10, group = groupRisk,
+     tooltip = "Alternative fixed dollar loss limit. Set to 0 to disable")
+     
+usePercentLimit = input.bool(true, "Use Percentage Limit", group = groupRisk,
+     tooltip = "If false, uses fixed dollar limit instead")
+     
+showStats = input.bool(true, "Show Statistics Table", group = groupRisk)
 
-// Reset reference at start of each day
+//-----------------------------------------------------------------------------
+// INPUTS - STRATEGY (Example)
+//-----------------------------------------------------------------------------
+groupStrategy = "Strategy Settings"
+maFastLen = input.int(10, "Fast MA Length", minval = 1, group = groupStrategy)
+maSlowLen = input.int(30, "Slow MA Length", minval = 1, group = groupStrategy)
+
+//-----------------------------------------------------------------------------
+// DAY TRACKING & EQUITY MANAGEMENT
+//-----------------------------------------------------------------------------
+//
+// Key Concept: We need to:
+//  1. Detect when a new trading day starts
+//  2. Record starting equity at beginning of day
+//  3. Calculate P&L since day start
+//  4. Compare loss against limit
+//  5. Disable trading if limit breached
+//
+
+// Detect new trading day
+// Note: This uses daily timeframe detection, adjust for your timezone
 newDay = ta.change(time("D")) != 0
-var float dayStartEquity = na
 
+// Store the starting equity for the current day
+var float dayStartEquity = na
+var float dayHighEquity = na
+var float dayLowEquity = na
+var int tradesThisDay = 0
+
+// Reset on new day
 if newDay or na(dayStartEquity)
     dayStartEquity := strategy.equity
+    dayHighEquity := strategy.equity
+    dayLowEquity := strategy.equity
+    tradesThisDay := 0
 
-dailyPnl      = strategy.equity - dayStartEquity
-dailyLoss     = -math.min(dailyPnl, 0)
-dailyLossPct  = dayStartEquity > 0 ? (dailyLoss / dayStartEquity) * 100.0 : 0
+// Track intraday equity extremes
+dayHighEquity := math.max(dayHighEquity, strategy.equity)
+dayLowEquity := math.min(dayLowEquity, strategy.equity)
 
-tradingAllowed = dailyLossPct < maxDailyLossPct
+// Count trades (approximate - tracks position changes)
+if ta.change(strategy.position_size) != 0
+    tradesThisDay += 1
 
-// Example entry: simple MA crossover, but only if tradingAllowed.
-maFast = ta.sma(close, 10)
-maSlow = ta.sma(close, 30)
+//-----------------------------------------------------------------------------
+// LOSS CALCULATION & LIMIT CHECK
+//-----------------------------------------------------------------------------
+
+// Calculate daily P&L
+dailyPnl = strategy.equity - dayStartEquity
+dailyPnlPct = dayStartEquity > 0 ? (dailyPnl / dayStartEquity) * 100.0 : 0.0
+
+// Calculate loss (negative P&L)
+dailyLoss = -math.min(dailyPnl, 0)  // Converts negative to positive
+dailyLossPct = dayStartEquity > 0 ? (dailyLoss / dayStartEquity) * 100.0 : 0.0
+
+// Check if loss limit is breached
+var bool lossLimitBreached = false
+
+if newDay
+    lossLimitBreached := false  // Reset on new day
+
+if usePercentLimit
+    if dailyLossPct >= maxDailyLossPct
+        lossLimitBreached := true
+else
+    if dailyLoss >= maxDailyLossDollar
+        lossLimitBreached := true
+
+// Trading is allowed only if limit not breached
+tradingAllowed = not lossLimitBreached
+
+//-----------------------------------------------------------------------------
+// STRATEGY LOGIC (Example: MA Crossover)
+//-----------------------------------------------------------------------------
+//
+// This is a simple example strategy to demonstrate the loss limit.
+// Replace with your own strategy logic.
+//
+
+maFast = ta.sma(close, maFastLen)
+maSlow = ta.sma(close, maSlowLen)
+
 crossUp = ta.crossover(maFast, maSlow)
 crossDown = ta.crossunder(maFast, maSlow)
 
-if tradingAllowed and crossUp
-    strategy.entry("Long", strategy.long)
+// Entry Conditions (only if trading allowed)
+longCondition = tradingAllowed and crossUp
+shortCondition = tradingAllowed and crossDown
 
-if crossDown
-    strategy.close("Long")
+// Execute trades
+if longCondition
+    if strategy.position_size < 0
+        strategy.close("Short")
+    strategy.entry("Long", strategy.long, comment = "Long Entry")
 
-plot(maFast, "Fast MA", color = color.new(color.teal, 0))
-plot(maSlow, "Slow MA", color = color.new(color.orange, 0))
+if shortCondition
+    if strategy.position_size > 0
+        strategy.close("Long")
+    strategy.entry("Short", strategy.short, comment = "Short Entry")
+
+// Exit on opposite signal
+if crossDown and strategy.position_size > 0
+    strategy.close("Long", comment = "Exit Long")
+    
+if crossUp and strategy.position_size < 0
+    strategy.close("Short", comment = "Exit Short")
+
+//-----------------------------------------------------------------------------
+// VISUAL INDICATORS
+//-----------------------------------------------------------------------------
+
+// Plot moving averages
+plot(maFast, "Fast MA", color = color.new(color.teal, 0), linewidth = 2)
+plot(maSlow, "Slow MA", color = color.new(color.orange, 0), linewidth = 2)
+
+// Highlight when trading is disabled
+bgcolor(lossLimitBreached ? color.new(color.red, 85) : na, title = "Trading Disabled")
+
+// Mark crossover points
+plotshape(crossUp and tradingAllowed, "Buy Signal", 
+     shape.triangleup, location.belowbar, color.lime, size = size.small)
+plotshape(crossDown and tradingAllowed, "Sell Signal", 
+     shape.triangledown, location.abovebar, color.red, size = size.small)
+
+// Warning markers when limit breached
+plotshape(lossLimitBreached, "LIMIT BREACHED", 
+     shape.xcross, location.top, color.red, size = size.large, text = "STOP")
+
+//-----------------------------------------------------------------------------
+// STATISTICS TABLE
+//-----------------------------------------------------------------------------
+
+if showStats
+    var table statsTable = table.new(position.bottom_right, 2, 6, 
+         border_width = 1, border_color = color.gray, frame_width = 1, frame_color = color.gray)
+    
+    if barstate.islast
+        // Header
+        table.cell(statsTable, 0, 0, "Daily Risk Monitor", 
+             text_color = color.white, bgcolor = color.new(color.gray, 30), text_size = size.normal)
+        table.cell(statsTable, 1, 0, "", 
+             bgcolor = color.new(color.gray, 30))
+        
+        // Starting Equity
+        table.cell(statsTable, 0, 1, "Start Equity", text_size = size.small)
+        table.cell(statsTable, 1, 1, "$" + str.tostring(dayStartEquity, "#,###.##"), text_size = size.small)
+        
+        // Current P&L
+        pnlColor = dailyPnl >= 0 ? color.lime : color.red
+        table.cell(statsTable, 0, 2, "Daily P&L", text_size = size.small)
+        table.cell(statsTable, 1, 2, "$" + str.tostring(dailyPnl, "#,###.##") + 
+             " (" + str.tostring(dailyPnlPct, "#.##") + "%)",
+             text_color = pnlColor, text_size = size.small)
+        
+        // Loss Amount
+        table.cell(statsTable, 0, 3, "Loss Today", text_size = size.small)
+        table.cell(statsTable, 1, 3, "$" + str.tostring(dailyLoss, "#,###.##") + 
+             " (" + str.tostring(dailyLossPct, "#.##") + "%)",
+             text_color = dailyLoss > 0 ? color.orange : color.gray, text_size = size.small)
+        
+        // Limit Status
+        limitText = usePercentLimit ? 
+             str.tostring(dailyLossPct, "#.##") + "% / " + str.tostring(maxDailyLossPct, "#.##") + "%" :
+             "$" + str.tostring(dailyLoss, "#,###.##") + " / $" + str.tostring(maxDailyLossDollar, "#,###.##")
+        limitColor = lossLimitBreached ? color.red : color.lime
+        table.cell(statsTable, 0, 4, "Limit Status", text_size = size.small)
+        table.cell(statsTable, 1, 4, limitText, text_color = limitColor, text_size = size.small)
+        
+        // Trading Status
+        statusText = tradingAllowed ? "✓ ACTIVE" : "✗ DISABLED"
+        statusColor = tradingAllowed ? color.lime : color.red
+        table.cell(statsTable, 0, 5, "Trading", text_size = size.small)
+        table.cell(statsTable, 1, 5, statusText, text_color = statusColor, text_size = size.small)
+
+//-----------------------------------------------------------------------------
+// RISK MANAGEMENT BEST PRACTICES
+//-----------------------------------------------------------------------------
+//
+// 1. Daily Loss Limits:
+//    - Typical range: 1-3% of account for day traders
+//    - 0.5-1% for conservative approaches
+//    - Never exceed 5% in a single day
+//
+// 2. Additional Safeguards:
+//    - Combine with per-trade stop losses
+//    - Implement weekly/monthly limits too
+//    - Consider maximum consecutive losses
+//    - Track number of trades per day
+//
+// 3. Psychology:
+//    - Prevents emotional revenge trading
+//    - Forces break after bad days
+//    - Protects against tilt
+//    - Enforces discipline automatically
+//
+// 4. Professional Standards:
+//    - Prop firms require daily loss limits
+//    - Regulatory requirements in some jurisdictions
+//    - Industry best practice for risk management
+//    - Essential for long-term survival
+//
+// 5. Implementation Tips:
+//    - Test limits with historical data
+//    - Start conservative, adjust gradually
+//    - Document all breaches for review
+//    - Analyze patterns in losing days
+//    - Adjust strategy if frequent breaches
+//
+//-----------------------------------------------------------------------------
+// EXTENSIONS & VARIATIONS
+//-----------------------------------------------------------------------------
+//
+// Trailing Daily Profit Lock:
+//  - If up X%, lock in Y% as minimum profit
+//  - Prevents giving back large gains
+//
+// Time-Based Restrictions:
+//  - No trading in first/last 30 minutes
+//  - Reduce position size after losses
+//  - Mandatory break after 3 losing trades
+//
+// Scaled Limits:
+//  - Tighter limits on volatile days
+//  - Looser limits on trending days
+//  - Adjust based on VIX or ATR
+//
+// Recovery Mode:
+//  - After loss limit, reduce size next day
+//  - Gradual return to full size
+//  - Require positive day before resuming normal size
